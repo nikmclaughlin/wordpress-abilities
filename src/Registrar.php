@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 
 namespace WordPress\Abilities;
 
+use ReflectionMethod;
 use WordPress\Abilities\Support\Features;
 
 /**
@@ -75,6 +76,20 @@ final class Registrar {
 	private static $deferred = array();
 
 	/**
+	 * Whether the support-feature preload hook was already queued.
+	 *
+	 * @var bool
+	 */
+	private static $preload_hooked = false;
+
+	/**
+	 * Deferred registrations whose support features to preload: name => selection policy.
+	 *
+	 * @var array<string, array<string, mixed>>
+	 */
+	private static $preloads = array();
+
+	/**
 	 * Static-only class.
 	 */
 	private function __construct() {}
@@ -136,6 +151,8 @@ final class Registrar {
 			return;
 		}
 
+		self::queue_feature_preloads( Manifest::names(), $args );
+
 		if ( self::$hooked ) {
 			return;
 		}
@@ -195,6 +212,8 @@ final class Registrar {
 			return self::try_register( $name, $entry, $args );
 		}
 
+		self::queue_feature_preloads( array( $name ), $args );
+
 		if ( isset( self::$deferred[ $name ] ) ) {
 			return false;
 		}
@@ -240,6 +259,60 @@ final class Registrar {
 	private static function register_eligible( array $args ): void {
 		foreach ( Manifest::all() as $name => $entry ) {
 			self::try_register( $name, $entry, $args );
+		}
+	}
+
+	/**
+	 * Queues the support-feature preload for deferred registrations.
+	 *
+	 * Core prepares its support surface at priority 1 of
+	 * `wp_abilities_api_init`, before it registers its abilities at the
+	 * default priority. The polyfills mirror that timing, so a
+	 * site's own changes at priorities 2-9, such as unregistering a core
+	 * setting, are not undone when the deferred registration loads them.
+	 *
+	 * @param list<string>         $names The manifest ability names being deferred.
+	 * @param array<string, mixed> $args  Consumer-side selection policy, see register_all().
+	 * @return void
+	 */
+	private static function queue_feature_preloads( array $names, array $args ): void {
+		foreach ( $names as $name ) {
+			if ( ! isset( self::$preloads[ $name ] ) ) {
+				self::$preloads[ $name ] = $args;
+			}
+		}
+
+		if ( self::$preload_hooked ) {
+			return;
+		}
+		self::$preload_hooked = true;
+
+		add_action(
+			'wp_abilities_api_init',
+			static function (): void {
+				self::preload_features();
+			},
+			1
+		);
+	}
+
+	/**
+	 * Loads the polyfills of the queued abilities the selection policy keeps.
+	 *
+	 * @return void
+	 */
+	private static function preload_features(): void {
+		foreach ( self::$preloads as $name => $args ) {
+			$entry = Manifest::get( $name );
+			if ( null === $entry || ! self::passes_selection( $name, $entry, $args ) ) {
+				continue;
+			}
+
+			foreach ( (array) $entry['requires'] as $feature ) {
+				if ( ! Features::is_available( $feature ) ) {
+					Features::load_polyfill( $feature );
+				}
+			}
 		}
 	}
 
@@ -373,9 +446,14 @@ final class Registrar {
 	 *    class that the manifest knows simply registers nothing.
 	 * 4. Consumer `filter` selection policy.
 	 * 5. WordPress version vs. the entry's min_wp_version support floor.
-	 * 6. `public_only`: probe the ability's own `public` meta.
-	 * 7. Support-surface `requires`: every feature must be available,
-	 *    attempting a polyfill load when one exists.
+	 * 6. Support-surface `requires`: every feature must be available,
+	 *    attempting a polyfill load when one exists (already loaded at
+	 *    priority 1 for deferred registrations, see queue_feature_preloads()).
+	 * 7. One probe instance, built once those features are in place and only
+	 *    when something reads it: `public_only` checks the ability's own
+	 *    `public` meta, and an ability that overrides should_register()
+	 *    must agree to be registered (core's register() early return, e.g.
+	 *    nothing to expose).
 	 * 8. Registration via the core `ability_class` mechanism, merging
 	 *    provenance meta (stability tier, renamed_from lineage). A null
 	 *    result from core when the ability's manifest-declared category is
@@ -402,33 +480,26 @@ final class Registrar {
 			return true;
 		}
 
-		// Gate 3: the class must be loadable (version-skew awareness).
-		if ( ! class_exists( $entry['class'] ) ) {
+		// Gates 3-5: loadable class, consumer selection, support floor.
+		if ( ! self::passes_selection( $name, $entry, $args ) ) {
 			return false;
 		}
 
-		// Gate 4: consumer selection policy.
-		$filter = isset( $args['filter'] ) && is_callable( $args['filter'] ) ? $args['filter'] : null;
-		if ( null !== $filter && ! (bool) $filter( $name, $entry ) ) {
-			return false;
-		}
-
-		// Gate 5: package support floor.
-		if ( version_compare( get_bloginfo( 'version' ), $entry['min_wp_version'], '<' ) ) {
-			return false;
-		}
-
-		// Gate 6: public-only selection probes the ability's own meta.
-		if ( ! empty( $args['public_only'] ) ) {
-			$probe = new $entry['class']();
-			if ( true !== $probe->get_meta_item( 'public', false ) ) {
+		// Gate 6: support-surface features, with polyfill attempt.
+		foreach ( (array) $entry['requires'] as $feature ) {
+			if ( ! Features::is_available( $feature ) && ! Features::load_polyfill( $feature ) ) {
 				return false;
 			}
 		}
 
-		// Gate 7: support-surface features, with polyfill attempt.
-		foreach ( (array) $entry['requires'] as $feature ) {
-			if ( ! Features::is_available( $feature ) && ! Features::load_polyfill( $feature ) ) {
+		// Gate 7: a single probe, for public-only selection and readiness.
+		$public_only = ! empty( $args['public_only'] );
+		if ( $public_only || self::overrides_readiness( $entry['class'] ) ) {
+			$probe = new $entry['class']();
+			if ( $public_only && true !== $probe->get_meta_item( 'public', false ) ) {
+				return false;
+			}
+			if ( ! $probe->should_register() ) {
 				return false;
 			}
 		}
@@ -488,5 +559,40 @@ final class Registrar {
 		self::$registered[ $name ] = true;
 
 		return true;
+	}
+
+	/**
+	 * Gates 3-5: the selection checks that need no ability instance.
+	 *
+	 * 3. The ability class must be loadable.
+	 * 4. Consumer `filter` selection policy.
+	 * 5. WordPress version vs. the entry's min_wp_version support floor.
+	 *
+	 * @param string               $name  The ability name.
+	 * @param array<string, mixed> $entry The manifest entry.
+	 * @param array<string, mixed> $args  Consumer-side selection policy.
+	 * @return bool Whether the ability passes all three.
+	 */
+	private static function passes_selection( string $name, array $entry, array $args ): bool {
+		if ( ! class_exists( $entry['class'] ) ) {
+			return false;
+		}
+
+		$filter = isset( $args['filter'] ) && is_callable( $args['filter'] ) ? $args['filter'] : null;
+		if ( null !== $filter && ! (bool) $filter( $name, $entry ) ) {
+			return false;
+		}
+
+		return version_compare( get_bloginfo( 'version' ), $entry['min_wp_version'], '>=' );
+	}
+
+	/**
+	 * Whether an ability class overrides Abstract_Core_Ability::should_register().
+	 *
+	 * @param class-string $ability_class The ability class.
+	 * @return bool True when the class declares its own readiness check.
+	 */
+	private static function overrides_readiness( string $ability_class ): bool {
+		return Abstract_Core_Ability::class !== ( new ReflectionMethod( $ability_class, 'should_register' ) )->class;
 	}
 }

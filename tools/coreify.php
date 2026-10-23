@@ -74,18 +74,74 @@ const REG_KEYS = array(
 	'execute_callback', 'permission_callback', 'required_capabilities', 'meta',
 );
 
+/**
+ * Optional authoring methods: Abstract_Core_Ability defaults them, and an
+ * ability overrides them only when core's register() entry point computes
+ * state before registering (prepare()) or returns early (should_register()).
+ */
+const OPTIONAL_METHODS = array( 'prepare', 'should_register' );
+
 /** Helpers re-inlined from Abstract_Core_Ability, in order. */
 const INLINE_HELPERS = array( 'parse_filter_int', 'parse_list_input', 'get_input_object' );
 
-/** Forward anchors: helper name => member after which the helper is inserted. */
-const HELPER_AFTER = array(
-	'parse_filter_int' => 'check_permission',
-	'parse_list_input' => 'parse_filter_int',
-	'get_input_object' => 'execute_content_query',
+/**
+ * Per-ability transform profiles, keyed by ability name.
+ *
+ * - fixture / package: repo-relative paths of the trunk snapshot and the
+ *   package port, the --check pair.
+ * - splice_after: the register_*() prologue variable after which core's
+ *   void early-return guard is spliced (null when core's guard, if any,
+ *   lives in register() instead; that one maps to should_register()).
+ * - helpers: forward anchors, helper name => member after which the
+ *   inherited Abstract_Core_Ability helper is re-inlined.
+ * - imports: the fixed `use` block of the package form.
+ * - register_doc / register_note: the forward register() docblock summary
+ *   and trailing comment (cosmetic; the semantic diff ignores comments).
+ * - category / requires / proposal: the reverse manifest entry skeleton.
+ */
+const PROFILES = array(
+	'core/content-query' => array(
+		'fixture'       => 'tests/Fixtures/abilities-api/abilities/class-wp-abilities-content.php',
+		'package'       => 'src/Content/Content_Query.php',
+		'splice_after'  => '$post_types',
+		'helpers'       => array(
+			'parse_filter_int' => 'check_permission',
+			'parse_list_input' => 'parse_filter_int',
+			'get_input_object' => 'execute_content_query',
+		),
+		'imports'       => array( 'DateTimeZone', 'stdClass', 'WP_Error', 'WP_Post', 'WP_Post_Type', 'WP_Query', 'WP_User' ),
+		'register_doc'  => 'Registers all content abilities.',
+		'register_note' => array(
+			'Future write-oriented content abilities can be registered here, reusing',
+			'the shared helpers below (get_exposed_post_type(), format_post(),',
+			'check_permission()).',
+		),
+		'category'      => 'content',
+		'requires'      => array( 'show_in_abilities' ),
+		'proposal'      => 'https://github.com/WordPress/wordpress-develop/pull/12195',
+	),
+	'core/settings-get'  => array(
+		'fixture'       => 'tests/Fixtures/abilities-api/abilities/class-wp-abilities-settings.php',
+		'package'       => 'src/Settings/Settings_Get.php',
+		'splice_after'  => null,
+		'helpers'       => array(),
+		'imports'       => array(),
+		'register_doc'  => 'Registers all settings abilities.',
+		'register_note' => array(),
+		'category'      => 'site',
+		'requires'      => array( 'setting_show_in_abilities' ),
+		'proposal'      => 'https://github.com/WordPress/wordpress-develop/pull/12141',
+	),
 );
 
-/** Fixed `use` block of the package form (per the hand-port). */
-const PKG_IMPORTS = array( 'DateTimeZone', 'stdClass', 'WP_Error', 'WP_Post', 'WP_Post_Type', 'WP_Query', 'WP_User' );
+/** Ability whose files the forward and reverse modes default to. */
+const DEFAULT_ABILITY = 'core/content-query';
+
+/** The transform profile of an ability name. */
+function profile( string $abname ): array {
+	isset( PROFILES[ $abname ] ) || fail( 'no coreify profile for ability ' . $abname . ' (add one to PROFILES)' );
+	return PROFILES[ $abname ];
+}
 
 /* ---------------------------------------------------------------------
  * Token primitives
@@ -97,8 +153,8 @@ const PKG_IMPORTS = array( 'DateTimeZone', 'stdClass', 'WP_Error', 'WP_Post', 'W
  *
  * @return list<array{int,string,int}>
  */
-function tokenize_source( string $src ): array {
-	$raw = token_get_all( $src, TOKEN_PARSE );
+function tokenize_source( string $src, bool $parse = true ): array {
+	$raw = $parse ? token_get_all( $src, TOKEN_PARSE ) : token_get_all( $src );
 	$out = array();
 	$line = 1;
 	foreach ( $raw as $t ) {
@@ -440,6 +496,44 @@ function parse_members( array $tokens, int $open, int $close ): array {
 			continue;
 		}
 		$id = $t[0];
+		if ( T_VARIABLE === $id ) {
+			// Property declaration: modifiers (and an optional type) back to the first one.
+			$p = $i;
+			while ( true ) {
+				$pv = prev_meaningful_token( $tokens, $open + 1, $p - 1 );
+				if ( null === $pv ) {
+					break;
+				}
+				$pid = $tokens[ $pv ][0];
+				if ( T_PUBLIC === $pid || T_PROTECTED === $pid || T_PRIVATE === $pid
+					|| T_STATIC === $pid || T_READONLY === $pid || T_VAR === $pid
+					|| T_STRING === $pid || T_ARRAY === $pid || 63 === $pid ) { // 63: '?'
+					$p = $pv;
+				} else {
+					break;
+				}
+			}
+			$end = null;
+			$d = 0;
+			for ( $scan = $i + 1; $scan <= $close; $scan++ ) {
+				$d += struct_delta( $tokens[ $scan ] );
+				if ( 0 === $d && 59 === $tokens[ $scan ][0] ) {
+					$end = $scan;
+					break;
+				}
+			}
+			if ( null === $end ) {
+				fail( 'property without terminating semicolon: ' . $t[1] );
+			}
+			$members[] = array(
+				'kind' => 'prop', 'name' => $t[1], 'start' => $p, 'end' => $end,
+				'doc' => doc_start( $tokens, $p ),
+				'open' => null, 'close' => null, 'vis' => null,
+				'static' => false, 'final' => false, 'abstract' => false,
+			);
+			$i = $end + 1;
+			continue;
+		}
 		if ( T_CONST !== $id && T_FUNCTION !== $id ) {
 			$i++;
 			continue;
@@ -798,16 +892,6 @@ function helper_bodies( string $absText ): array {
 	return $out;
 }
 
-function registration_stmt( array $tokens, array $stmts ): array {
-	foreach ( $stmts as $k => $st ) {
-		$f = stmt_start( $tokens, $st );
-		if ( T_STRING === $tokens[$f][0] && 'wp_register_ability' === $tokens[$f][1] ) {
-			return array( $k, $f );
-		}
-	}
-	fail( 'no wp_register_ability(...) statement found' );
-}
-
 /* ---------------------------------------------------------------------
  * FORWARD transform
  * ------------------------------------------------------------------- */
@@ -841,6 +925,26 @@ function build_registration( string $nameLit, array $vals ): string {
 }
 
 /**
+ * The guard condition of a should_register() return expression: the
+ * expression with its leading `!` negation removed, unwrapped from one
+ * outer pair of parentheses when they enclose all of it.
+ */
+function guard_condition( string $expr ): string {
+	$expr = trim( $expr );
+	'!' === substr( $expr, 0, 1 ) || fail( 'should_register() must return a negated condition, `! <condition>`' );
+	$cond = trim( substr( $expr, 1 ) );
+	if ( '(' === substr( $cond, 0, 1 ) ) {
+		$tokens = tokenize_source( '<?php ' . $cond, false );
+		$open   = next_meaningful_token( $tokens, 1 );
+		$last   = prev_meaningful_token( $tokens, 0, count( $tokens ) - 1 );
+		if ( match_group( $tokens, $open ) === $last ) {
+			$cond = span_trim( $tokens, $open + 1, $last - 1 );
+		}
+	}
+	return $cond;
+}
+
+/**
  * Forward transform: package class text -> core class text.
  *
  * @param string $absText Raw text of src/Abstract_Core_Ability.php.
@@ -852,12 +956,13 @@ function transform_forward( string $pkgText, string $absText ): string {
 	$by = index_by_name( $members );
 
 	$abname = unquote( return_expr( $tokens, $by['ability_name'] ) );
-	list( $dir, $pkgClass, $coreClass, $regMethod, $category ) = slug_parts( $abname );
+	$prof = profile( $abname );
+	list( $dir, $pkgClass, $coreClass, $regMethod ) = slug_parts( $abname );
 	if ( $cls['name'] !== $pkgClass ) {
 		fail( 'unexpected class name ' . $cls['name'] . ' for ability ' . $abname . ' (expected ' . $pkgClass . ')' );
 	}
-	if ( isset( $by['register'] ) || isset( $by['register_content_query'] ) ) {
-		fail( 'package class must not declare register()/register_content_query()' );
+	if ( isset( $by['register'] ) || isset( $by[ $regMethod ] ) ) {
+		fail( 'package class must not declare register()/' . $regMethod . '()' );
 	}
 	foreach ( INLINE_HELPERS as $h ) {
 		if ( isset( $by[ $h ] ) ) {
@@ -879,13 +984,26 @@ function transform_forward( string $pkgText, string $absText ): string {
 	if ( isset( $vals['required_capabilities'] ) && expr_is_empty_array( $vals['required_capabilities'] ) ) {
 		unset( $vals['required_capabilities'] );
 	}
+	// A null permission callback means the required capabilities own authorization: core omits the entry.
+	if ( 'null' === strtolower( trim( $vals['permission_callback'] ) ) ) {
+		unset( $vals['permission_callback'] );
+	}
 
-	/* --- register_content_query() prologue from input_schema() ------------- */
+	/* --- register() prologue and guard from prepare()/should_register() --- */
+	$prepared = array();
+	if ( isset( $by['prepare'] ) ) {
+		$pRec = $by['prepare'];
+		foreach ( body_statements( $tokens, $pRec['open'], $pRec['close'] ) as $st ) {
+			$prepared[] = stmt_text( $tokens, $st );
+		}
+	}
+	$guard = isset( $by['should_register'] ) ? guard_condition( return_expr( $tokens, $by['should_register'] ) ) : null;
+
+	/* --- register_*() prologue from input_schema() ------------------------- */
 	$inRec = $by['input_schema'];
 	$stmts = body_statements( $tokens, $inRec['open'], $inRec['close'] );
 	$assigns = array();
-	$postTypesAt = -1;
-	$sawSpliceGuard = false;
+	$spliceAt = -1;
 	foreach ( $stmts as $idx => $st ) {
 		$f = stmt_start( $tokens, $st );
 		$id = $tokens[ $f ][0];
@@ -893,35 +1011,26 @@ function transform_forward( string $pkgText, string $absText ): string {
 			continue; // the schema return itself becomes the registration entry
 		}
 		if ( T_IF === $id ) {
-			$sawSpliceGuard = true;
-			continue;
+			fail( 'input_schema() must not contain the void early-return splice' );
 		}
 		if ( T_VARIABLE !== $id ) {
 			fail( 'unexpected statement in input_schema(): ' . token_repr( $tokens[ $f ] ) );
 		}
-		if ( '$post_types' === $tokens[ $f ][1] ) {
-			$postTypesAt = count( $assigns );
+		if ( null !== $prof['splice_after'] && $prof['splice_after'] === $tokens[ $f ][1] ) {
+			$spliceAt = count( $assigns );
 		}
 		$assigns[] = $st;
 	}
-	if ( $sawSpliceGuard ) {
-		fail( 'input_schema() must not contain the void early-return splice' );
-	}
-	if ( $postTypesAt < 0 ) {
-		fail( 'input_schema() missing a $post_types assignment' );
+	if ( null !== $prof['splice_after'] && $spliceAt < 0 ) {
+		fail( 'input_schema() missing a ' . $prof['splice_after'] . ' assignment' );
 	}
 
-	$probe = array();
-	foreach ( $assigns as $st ) {
-		$probe[] = stmt_text( $tokens, $st );
-	}
-
-	/* --- assemble register_content_query() --------------------------------- */
+	/* --- assemble register_*() --------------------------------------------- */
 	$regCq = "\tprivate function " . $regMethod . "(): void {\n";
 	foreach ( $assigns as $idx => $st ) {
 		$regCq .= "\t\t" . stmt_text( $tokens, $st ) . "\n";
-		if ( $postTypesAt === $idx ) {
-			$regCq .= "\t\tif ( empty( \$post_types ) ) {\n";
+		if ( $spliceAt === $idx ) {
+			$regCq .= "\t\tif ( empty( " . $prof['splice_after'] . " ) ) {\n";
 			$regCq .= "\t\t\treturn;\n";
 			$regCq .= "\t\t}\n\n";
 		}
@@ -929,28 +1038,35 @@ function transform_forward( string $pkgText, string $absText ): string {
 	$regCq .= "\n" . build_registration( $nameLit, $vals );
 	$regCq .= "\t}\n";
 
+	/* --- assemble register() ------------------------------------------------ */
 	$registerFn = "\t/**\n"
-		. "\t * Registers all content abilities.\n"
+		. "\t * " . $prof['register_doc'] . "\n"
 		. "\t *\n"
 		. "\t * Must run on the `wp_abilities_api_init` hook.\n"
 		. "\t *\n"
 		. "\t * @since 7.2.0\n"
 		. "\t */\n"
-		. "\tpublic function register(): void {\n"
-		. "\t\t\$this->register_content_query();\n\n"
-		. "\t\t/*\n"
-		. "\t\t * Future write-oriented content abilities can be registered here, reusing\n"
-		. "\t\t * the shared helpers below (get_exposed_post_type(), format_post(),\n"
-		. "\t\t * check_permission()).\n"
-		. "\t\t */\n"
-		. "\t}\n";
-
-	/* --- verbatim constants and methods, with helper re-inline -------------- */
-	$chunks = array();
-	$pending = array();
-	foreach ( HELPER_AFTER as $h => $anchor ) {
-		$pending[ $h ] = $anchor;
+		. "\tpublic function register(): void {\n";
+	foreach ( $prepared as $line ) {
+		$registerFn .= "\t\t" . reindent( $line, 0 ) . "\n";
 	}
+	if ( null !== $guard ) {
+		$registerFn .= "\t\tif ( " . $guard . " ) {\n"
+			. "\t\t\treturn;\n"
+			. "\t\t}\n\n";
+	}
+	$registerFn .= "\t\t\$this->" . $regMethod . "();\n";
+	if ( array() !== $prof['register_note'] ) {
+		$registerFn .= "\n\t\t/*\n";
+		foreach ( $prof['register_note'] as $line ) {
+			$registerFn .= "\t\t * " . $line . "\n";
+		}
+		$registerFn .= "\t\t */\n";
+	}
+	$registerFn .= "\t}\n";
+
+	/* --- verbatim constants, properties and methods, with helper re-inline -- */
+	$pending = $prof['helpers'];
 	$helpTexts = helper_texts( $absText );
 
 	$placeHelpers = static function ( string $anchor ) use ( &$methodChunks, &$pending, $helpTexts ) {
@@ -971,6 +1087,7 @@ function transform_forward( string $pkgText, string $absText ): string {
 	};
 
 	$constChunk = '';
+	$propChunk = '';
 	$methodChunks = array();
 	foreach ( $members as $rec ) {
 		$name = $rec['name'];
@@ -978,7 +1095,11 @@ function transform_forward( string $pkgText, string $absText ): string {
 			$constChunk .= "\t" . member_text( $tokens, $rec ) . "\n";
 			continue;
 		}
-		if ( in_array( $name, AUTHORING_METHODS, true ) ) {
+		if ( 'prop' === $rec['kind'] ) {
+			$propChunk .= "\n\t" . member_text( $tokens, $rec ) . "\n";
+			continue;
+		}
+		if ( in_array( $name, AUTHORING_METHODS, true ) || in_array( $name, OPTIONAL_METHODS, true ) ) {
 			continue; // consumed by the registration rebuild
 		}
 		$methodChunks[] = "\t" . member_text( $tokens, $rec ) . "\n";
@@ -988,7 +1109,7 @@ function transform_forward( string $pkgText, string $absText ): string {
 		fail( 'helpers without anchor in package order: ' . implode( ', ', array_keys( $pending ) ) );
 	}
 
-	$body = $constChunk . "\n" . $registerFn . "\n" . $regCq . "\n" . implode( "\n", $methodChunks );
+	$body = $constChunk . $propChunk . "\n" . $registerFn . "\n" . $regCq . "\n" . implode( "\n", $methodChunks );
 
 	$header = "<?php\n"
 		. "/**\n"
@@ -1069,26 +1190,110 @@ function parse_registration( array $tokens, array $stmt ): array {
 
 /** Build the manifest entry skeleton print (reverse mode). */
 function build_manifest( string $abname ): string {
-	list( $dir, $pkgClass, $coreClass, $regMethod, $category ) = slug_parts( $abname );
+	$prof = profile( $abname );
+	list( $dir, $pkgClass ) = slug_parts( $abname );
+	$requires = array();
+	foreach ( $prof['requires'] as $feature ) {
+		$requires[] = "'" . $feature . "'";
+	}
 	$lines = array(
 		'=== Manifest entry skeleton (human-verify before applying to src/Manifest.php) ===',
 		"'" . $abname . "' => array(",
 		"\t'name'           => '" . $abname . "',",
 		"\t'class'          => '" . $dir . '\\' . $pkgClass . "',",
-		"\t'category'       => '" . $category . "',",
+		"\t'category'       => '" . $prof['category'] . "',",
 		"\t'tier'           => 'core',",
 		"\t'min_wp_version' => '6.9',",
 		"\t'core_since'     => '7.2',",
-		"\t'requires'       => array( 'show_in_abilities' ),",
+		"\t'requires'       => array( " . implode( ', ', $requires ) . ' ),',
 		"\t'renamed_from'   => null,",
-		"\t'proposal'       => 'https://github.com/WordPress/wordpress-develop/pull/12195',",
+		"\t'proposal'       => '" . $prof['proposal'] . "',",
 		"),",
 		'',
-		'Note: tier=core, core_since=7.2, requires=[show_in_abilities] per settled design.',
-		'min_wp_version/proposal values are copied from the existing Manifest.php entry;',
-		'WP2-flagged for human confirmation.',
+		'Note: tier=core, core_since=7.2 per settled design; category, requires and',
+		'proposal come from the coreify profile and must match src/Manifest.php.',
 	);
 	return implode( "\n", $lines );
+}
+
+/**
+ * The core form's registration method: the register_*() member holding the
+ * wp_register_ability(...) statement.
+ *
+ * @return array{array<string,mixed>,list<array{int,int}>,int} [member record, its statements, registration statement index]
+ */
+function core_registration_method( array $tokens, array $members ): array {
+	foreach ( $members as $rec ) {
+		if ( 'function' !== $rec['kind'] || 'register' === $rec['name'] || 0 !== strpos( $rec['name'], 'register_' ) || null === $rec['open'] ) {
+			continue;
+		}
+		$stmts = body_statements( $tokens, $rec['open'], $rec['close'] );
+		foreach ( $stmts as $k => $st ) {
+			$f = stmt_start( $tokens, $st );
+			if ( T_STRING === $tokens[ $f ][0] && 'wp_register_ability' === $tokens[ $f ][1] ) {
+				return array( $rec, $stmts, $k );
+			}
+		}
+	}
+	fail( 'no register_*() method with a wp_register_ability(...) statement in core form' );
+}
+
+/**
+ * Parse core's register(): the state assignments before an optional void
+ * early-return guard, then the single call into the registration method.
+ *
+ * @return array{list<string>,?string} [prepare() statement texts, guard condition or null]
+ */
+function parse_core_register( array $tokens, array $rec, string $regMethod ): array {
+	$prepared = array();
+	$guard = null;
+	$called = false;
+	foreach ( body_statements( $tokens, $rec['open'], $rec['close'] ) as $st ) {
+		$f = stmt_start( $tokens, $st );
+		$id = $tokens[ $f ][0];
+		if ( $called ) {
+			fail( 'unexpected statement after $this->' . $regMethod . '() in register()' );
+		}
+		if ( T_IF === $id ) {
+			null === $guard || fail( 'expected at most one early-return guard in register()' );
+			$paren = next_meaningful_token( $tokens, $f + 1, $st[1] );
+			$paren !== null && 40 === $tokens[ $paren ][0] || fail( 'register() guard without a condition' );
+			$pclose = match_group( $tokens, $paren );
+			$brace = next_meaningful_token( $tokens, $pclose + 1, $st[1] );
+			$brace !== null && 123 === $tokens[ $brace ][0] || fail( 'register() guard without a block' );
+			$body = array();
+			foreach ( body_statements( $tokens, $brace, match_group( $tokens, $brace ) ) as $inner ) {
+				$body[] = stmt_text( $tokens, $inner );
+			}
+			array( 'return;' ) === $body || fail( 'register() guard must only `return;`' );
+			$guard = span_trim( $tokens, $paren + 1, $pclose - 1 );
+			continue;
+		}
+		if ( T_VARIABLE === $id && '$this' === $tokens[ $f ][1] && '$this->' . $regMethod . '();' === preg_replace( '/\s+/', '', stmt_text( $tokens, $st ) ) ) {
+			$called = true;
+			continue;
+		}
+		if ( T_VARIABLE === $id && null === $guard ) {
+			$prepared[] = stmt_text( $tokens, $st );
+			continue;
+		}
+		fail( 'unexpected statement in register(): ' . token_repr( $tokens[ $f ] ) );
+	}
+	$called || fail( 'register() never calls $this->' . $regMethod . '()' );
+	return array( $prepared, $guard );
+}
+
+/** Negate a guard condition for should_register(): `! cond`, parenthesized unless a single call. */
+function negate_condition( string $cond ): string {
+	$tokens = tokenize_source( '<?php ' . $cond, false );
+	$first = next_meaningful_token( $tokens, 1 );
+	$last = prev_meaningful_token( $tokens, 0, count( $tokens ) - 1 );
+	$paren = null === $first ? null : next_meaningful_token( $tokens, $first + 1 );
+	$isCall = null !== $paren
+		&& in_array( $tokens[ $first ][0], array( T_STRING, T_EMPTY, T_ISSET ), true )
+		&& 40 === $tokens[ $paren ][0]
+		&& match_group( $tokens, $paren ) === $last;
+	return $isCall ? '! ' . $cond : '! ( ' . $cond . ' )';
 }
 
 /**
@@ -1099,17 +1304,17 @@ function transform_reverse( string $coreText ): string {
 	$cls = parse_class( $tokens );
 	$members = parse_members( $tokens, $cls['open'], $cls['close'] );
 	$by = index_by_name( $members );
-	isset( $by['register_content_query'] ) || fail( 'no register_content_query() in core form' );
 
-	$cqRec = $by['register_content_query'];
-	$stmts = body_statements( $tokens, $cqRec['open'], $cqRec['close'] );
-
-	list( $regIdx, $regTok ) = array_values( registration_stmt( $tokens, $stmts ) );
+	list( $cqRec, $stmts, $regIdx ) = core_registration_method( $tokens, $members );
 	list( $abname, $entries ) = parse_registration( $tokens, $stmts[ $regIdx ] );
-	list( $dir, $pkgClass, $coreClass, $regMethod, $category ) = slug_parts( $abname );
+	$prof = profile( $abname );
+	list( $dir, $pkgClass, $coreClass, $regMethod ) = slug_parts( $abname );
 	if ( $cls['name'] !== $coreClass ) {
 		fail( 'core class name ' . $cls['name'] . ' does not match derived ' . $coreClass . ' for ' . $abname );
 	}
+	$cqRec['name'] === $regMethod || fail( 'registration method ' . $cqRec['name'] . '() does not match derived ' . $regMethod . '()' );
+	isset( $by['register'] ) || fail( 'no register() in core form' );
+	list( $prepared, $guard ) = parse_core_register( $tokens, $by['register'], $regMethod );
 
 	/* prologue assignments before wp_register_ability(...), splice dropped */
 	$guardCount = 0;
@@ -1127,7 +1332,8 @@ function transform_reverse( string $coreText ): string {
 		}
 		fail( 'unexpected statement before wp_register_ability(): ' . token_repr( $tokens[ $f ] ) );
 	}
-	1 === $guardCount || fail( 'expected exactly one void early-return guard, found ' . $guardCount );
+	$expectGuards = null === $prof['splice_after'] ? 0 : 1;
+	$expectGuards === $guardCount || fail( 'expected ' . $expectGuards . ' void early-return guard(s) in ' . $regMethod . '(), found ' . $guardCount );
 
 	/* helper drop with body-equality guard */
 	$absPath = default_abstract_path();
@@ -1135,6 +1341,7 @@ function transform_reverse( string $coreText ): string {
 
 	/* authoring method bodies */
 	$authors = array();
+	$types = AUTHORING_TYPES;
 
 	$nameLit = "'" . $abname . "'";
 	$authors['ability_name'] = 'return ' . $nameLit . ';';
@@ -1147,7 +1354,14 @@ function transform_reverse( string $coreText ): string {
 	$authors['category_slug'] = $mkret( 'category' );
 	$authors['output_schema'] = $mkret( 'output_schema' );
 	$authors['make_execute_callback'] = $mkret( 'execute_callback' );
-	$authors['make_permission_callback'] = $mkret( 'permission_callback' );
+	if ( isset( $entries['permission_callback'] ) ) {
+		$authors['make_permission_callback'] = $mkret( 'permission_callback' );
+	} else {
+		// Core omits the callback when the required capabilities own authorization.
+		isset( $entries['required_capabilities'] ) || fail( 'registration has neither permission_callback nor required_capabilities' );
+		$authors['make_permission_callback'] = 'return null;';
+		$types['make_permission_callback'] = '?callable';
+	}
 	$authors['ability_meta'] = $mkret( 'meta' );
 
 	$rc = 'return array();';
@@ -1162,8 +1376,24 @@ function transform_reverse( string $coreText ): string {
 	}
 	$authors['input_schema'] = $prologue . "\t\t" . 'return ' . reindent( $entries['input_schema'] ?? '', -2 ) . ';' . "\n";
 
+	/* optional authoring methods from core's register() */
+	$optional = array();
+	if ( array() !== $prepared ) {
+		$optional['prepare'] = array(
+			'sig'  => 'protected function prepare(): void',
+			'doc'  => 'Computes the state core computes in register() before registering.',
+			'body' => "\t\t" . implode( "\n\t\t", $prepared ),
+		);
+	}
+	if ( null !== $guard ) {
+		$optional['should_register'] = array(
+			'sig'  => 'public function should_register(): bool',
+			'doc'  => 'Whether core registers the ability, the negation of its register() early return.',
+			'body' => "\t\treturn " . negate_condition( $guard ) . ';',
+		);
+	}
+
 	/* assemble */
-	$nsParts = array( $dir, $pkgClass );
 	$out = "<?php\n"
 		. "/**\n"
 		. ' * Canonical WordPress abilities: `' . $abname . "` ability (tier core).\n"
@@ -1172,18 +1402,18 @@ function transform_reverse( string $coreText ): string {
 		. " * generated by tools/coreify.php --reverse; hand-finish header docblock.\n"
 		. " *\n"
 		. " * Deviations from trunk (authoring surface only): the registration entry\n"
-		. " * point is decomposed into Abstract_Core_Ability abstract methods;\n"
-		. ' * parse_filter_int(), parse_list_input() and get_input_object() are inherited' . ",\n"
-		. " * from Abstract_Core_Ability instead of declared here.\n"
+		. " * points are decomposed into Abstract_Core_Ability authoring methods;\n"
+		. " * any of parse_filter_int(), parse_list_input() and get_input_object()\n"
+		. " * core declares are inherited from Abstract_Core_Ability instead.\n"
 		. " */\n\n"
 		. "declare( strict_types = 1 );\n\n"
 		. 'namespace WordPress\\Abilities\\' . $dir . ";\n\n";
-	foreach ( PKG_IMPORTS as $imp ) {
+	foreach ( $prof['imports'] as $imp ) {
 		$out .= 'use ' . $imp . ";\n";
 	}
-	$out .= "\nuse WordPress\\Abilities\\Abstract_Core_Ability;\n\n";
+	$out .= ( array() === $prof['imports'] ? '' : "\n" ) . "use WordPress\\Abilities\\Abstract_Core_Ability;\n\n";
 	$out .= '/**' . "\n"
-		. ' * Canonical WordPress abilities: `' . $category . "` ability.\n"
+		. ' * Canonical WordPress abilities: `' . $abname . "` ability.\n"
 		. " *\n"
 		. " * @generated by tools/coreify.php --reverse. Hand-finish this docblock.\n"
 		. " */\n"
@@ -1191,13 +1421,18 @@ function transform_reverse( string $coreText ): string {
 
 	$sections = array();
 	$constSections = array();
+	$propSections = array();
 	foreach ( $members as $rec ) {
 		$name = $rec['name'];
 		if ( 'const' === $rec['kind'] ) {
 			$constSections[] = "\t" . member_text( $tokens, $rec ) . "\n";
 			continue;
 		}
-		if ( 'register' === $name || 'register_content_query' === $name ) {
+		if ( 'prop' === $rec['kind'] ) {
+			$propSections[] = "\t" . member_text( $tokens, $rec ) . "\n";
+			continue;
+		}
+		if ( 'register' === $name || $regMethod === $name ) {
 			continue; // consumed by the authoring rebuild
 		}
 		if ( in_array( $name, INLINE_HELPERS, true ) ) {
@@ -1218,18 +1453,27 @@ function transform_reverse( string $coreText ): string {
 		$sections[] = "\t" . member_text( $tokens, $rec ) . "\n";
 	}
 
-	/* authoring methods, in fixed order, after constants */
+	/* authoring methods, in fixed order, after constants and properties */
 	$authorChunks = array();
 	foreach ( AUTHORING_METHODS as $m ) {
-		$sig = AUTHORING_TYPES[ $m ];
+		$sig = $types[ $m ];
 		$lead = ( "\t\t" === substr( $authors[ $m ], 0, 2 ) ) ? '' : "\t\t";
 		$authorChunks[] = "\t/**\n\t * " . AUTHORING_DOCS[ $m ] . "\n\t */\n"
 			. "\tprotected function " . $m . '(): ' . $sig . " {\n"
 			. $lead . $authors[ $m ] . "\n"
 			. "\t}\n";
 	}
+	foreach ( OPTIONAL_METHODS as $m ) {
+		if ( ! isset( $optional[ $m ] ) ) {
+			continue;
+		}
+		$authorChunks[] = "\t/**\n\t * " . $optional[ $m ]['doc'] . "\n\t */\n"
+			. "\t" . $optional[ $m ]['sig'] . " {\n"
+			. $optional[ $m ]['body'] . "\n"
+			. "\t}\n";
+	}
 
-	$out .= implode( "\n", $constSections ) . implode( "\n", $authorChunks ) . "\n" . implode( "\n", $sections ) . "}\n";
+	$out .= implode( "\n", $constSections ) . implode( "\n", $propSections ) . implode( "\n", $authorChunks ) . "\n" . implode( "\n", $sections ) . "}\n";
 
 	return $out;
 }
@@ -1251,33 +1495,39 @@ function usage(): void {
 coreify.php — mechanical package<->core token transform for wordpress/abilities.
 
 Usage:
-  php coreify.php [--in <path>] [--out <path>]
-  php coreify.php --reverse [--in <path>] [--out <path>]
-  php coreify.php --check [--in <path>] [--abs <path>]
+  php coreify.php [--ability <name>] [--in <path>] [--out <path>]
+  php coreify.php --reverse [--ability <name>] [--in <path>] [--out <path>]
+  php coreify.php --check [--ability <name>] [--in <path>] [--pkg <path>] [--abs <path>]
   php coreify.php --help
 
+Abilities with a transform profile: core/content-query, core/settings-get.
+
 Modes:
-  (default)  forward: package -> core form. Input defaults to
-             src/Content/Content_Query.php. Writes the fixture-shaped class
-             to tools/out/class-wp-abilities-content.php (unless --out).
+  (default)  forward: package -> core form. Input defaults to the ability's
+             package file (src/Content/Content_Query.php for the default
+             core/content-query). Writes the fixture-shaped class to
+             tools/out/class-wp-abilities-<area>.php (unless --out).
   --reverse  core -> package form (+ manifest entry skeleton on stdout).
-             Input defaults to the trunk fixture
-             tests/Fixtures/abilities-api/abilities/class-wp-abilities-content.php.
-             Writes tools/out/Content/Content_Query.php (unless --out).
+             Input defaults to the ability's trunk fixture under
+             tests/Fixtures/abilities-api/abilities/. Writes
+             tools/out/<Area>/<Class>.php (unless --out).
   --check    acceptance gate: reverse(fixture) -> forward() -> semantic token
              diff vs the ORIGINAL fixture (hard gate, prints first mismatch).
-             Also diffs the reverse output vs the hand-port
-             src/Content/Content_Query.php. Exits non-zero on divergence.
+             Also diffs the reverse output vs the hand-port package file.
+             Runs every profiled ability unless --ability is given. Exits
+             non-zero on divergence.
 
 Options:
-  --in <path>    input file (per-mode default as above; the same path serves
-                 as the fixture input for --check and reverse)
-  --out <path>   output file (default tools/out/...)
-  --abs <path>   path to src/Abstract_Core_Ability.php (default derived from
-                 the repo root)
-  --pkg <path>   --check only: package reference file for the second diff
-                 (default src/Content/Content_Query.php)
-  --help         this help
+  --ability <name>  the profiled ability whose default paths to use
+                    (default core/content-query; --check: all)
+  --in <path>       input file (per-mode default as above; the same path serves
+                    as the fixture input for --check and reverse)
+  --out <path>      output file (default tools/out/...)
+  --abs <path>      path to src/Abstract_Core_Ability.php (default derived from
+                    the repo root)
+  --pkg <path>      --check only: package reference file for the second diff
+                    (default the ability's package file)
+  --help            this help
 
 Exit codes: 0 success; 1 transform/semantic-diff failure; 2 usage error.
 TXT;
@@ -1286,6 +1536,7 @@ TXT;
 function parse_args( array $argv ): array {
 	$o = array(
 		'mode' => 'forward',
+		'ability' => null,
 		'in' => null,
 		'out' => null,
 		'abs' => null,
@@ -1305,6 +1556,10 @@ function parse_args( array $argv ): array {
 			case $arg === '--help':
 			case $arg === '-h':
 				$o['help'] = true;
+				break;
+			case $arg === '--ability':
+				$o['ability'] = $argv[ ++$i ] ?? fail( '--ability requires a name' );
+				profile( $o['ability'] );
 				break;
 			case $arg === '--in':
 				$o['in'] = $argv[ ++$i ] ?? fail( '--in requires a path' );
@@ -1346,53 +1601,30 @@ function write_out( string $path, string $text ): void {
 	echo '[coreify] wrote ' . $path . " (" . strlen( $text ) . " bytes)\n";
 }
 
-function run( array $o ): int {
-	$root = default_root();
-	$absPath = $o['abs'] ?? default_abstract_path();
+/** Default tools/out paths of an ability: [reverse (package form), forward (core form)]. */
+function out_paths( string $root, string $abname ): array {
+	list( $dir, $pkgClass, $coreClass ) = slug_parts( $abname );
+	return array(
+		$root . '/tools/out/' . $dir . '/' . $pkgClass . '.php',
+		$root . '/tools/out/class-' . str_replace( '_', '-', strtolower( $coreClass ) ) . '.php',
+	);
+}
 
-	if ( 'forward' === $o['mode'] ) {
-		$in = $o['in'] ?? $root . '/src/Content/Content_Query.php';
-		$out = $o['out'] ?? $root . '/tools/out/class-wp-abilities-content.php';
-		$result = transform_forward( read_file( $in ), read_file( $absPath ) );
-		write_out( $out, $result );
-		echo "[coreify] forward OK: {$in} -> {$out}\n";
-		return 0;
-	}
-
-	if ( 'reverse' === $o['mode'] ) {
-		$in = $o['in'] ?? $root . '/tests/Fixtures/abilities-api/abilities/class-wp-abilities-content.php';
-		$coreText = read_file( $in );
-		$result = transform_reverse( $coreText );
-		$abname = reverse_ability_name( $coreText );
-		$dir = slug_parts( $abname ) ? slug_parts( $abname )[0] : '';
-		$defaultOut = $root . '/tools/out/' . ( $dir ?: 'Content' ) . '/Content_Query.php';
-		$out = $o['out'] ?? $defaultOut;
-		write_out( $out, $result );
-		echo "[coreify] reverse OK: {$in} -> {$out}\n";
-		echo build_manifest( $abname ) . "\n";
-		return 0;
-	}
-
-	/* --- check -------------------------------------------------------------- */
-	$in = $o['in'] ?? $root . '/tests/Fixtures/abilities-api/abilities/class-wp-abilities-content.php';
-	$pkgPath = $o['pkg'] ?? $root . '/src/Content/Content_Query.php';
+/** Round-trip check of one fixture/package pair. */
+function check_pair( string $root, string $in, string $pkgPath, string $absText ): bool {
 	$fixture = read_file( $in );
 	$handport = read_file( $pkgPath );
-	$absText = read_file( $absPath );
-
-	$revOut = $root . '/tools/out/Content/Content_Query.php';
-	$fwdOut = $root . '/tools/out/class-wp-abilities-content.php';
+	list( $revOut, $fwdOut ) = out_paths( $root, reverse_ability_name( $fixture ) );
 
 	$pkgText = transform_reverse( $fixture );
 	write_out( $revOut, $pkgText );
 	$coreText = transform_forward( $pkgText, $absText );
 	write_out( $fwdOut, $coreText );
 
-	$okA = true;
-	$okB = true;
+	$ok = true;
 	$mA = semdiff( $coreText, $fixture );
 	if ( null !== $mA ) {
-		$okA = false;
+		$ok = false;
 		fwrite( STDERR, "[check] FAIL: round-trip forward output vs ORIGINAL fixture\n" );
 		print_mismatch( 'roundtrip-vs-fixture', $mA );
 	} else {
@@ -1400,30 +1632,65 @@ function run( array $o ): int {
 	}
 	$mB = semdiff( $pkgText, $handport );
 	if ( null !== $mB ) {
-		$okB = false;
+		$ok = false;
 		fwrite( STDERR, "[check] FAIL: reverse output vs hand-port package file\n" );
 		print_mismatch( 'reverse-vs-handport', $mB );
 	} else {
 		echo "[check] PASS: reverse output vs hand-port package file (0 semantic differences)\n";
 	}
-	if ( ! $okA || ! $okB ) {
+	return $ok;
+}
+
+function run( array $o ): int {
+	$root = default_root();
+	$absPath = $o['abs'] ?? default_abstract_path();
+	$abname = $o['ability'] ?? DEFAULT_ABILITY;
+	$prof = profile( $abname );
+
+	if ( 'forward' === $o['mode'] ) {
+		$in = $o['in'] ?? $root . '/' . $prof['package'];
+		$result = transform_forward( read_file( $in ), read_file( $absPath ) );
+		$out = $o['out'] ?? out_paths( $root, $abname )[1];
+		write_out( $out, $result );
+		echo "[coreify] forward OK: {$in} -> {$out}\n";
+		return 0;
+	}
+
+	if ( 'reverse' === $o['mode'] ) {
+		$in = $o['in'] ?? $root . '/' . $prof['fixture'];
+		$coreText = read_file( $in );
+		$result = transform_reverse( $coreText );
+		$abname = reverse_ability_name( $coreText );
+		$out = $o['out'] ?? out_paths( $root, $abname )[0];
+		write_out( $out, $result );
+		echo "[coreify] reverse OK: {$in} -> {$out}\n";
+		echo build_manifest( $abname ) . "\n";
+		return 0;
+	}
+
+	/* --- check -------------------------------------------------------------- */
+	$absText = read_file( $absPath );
+	$names = ( null === $o['ability'] && null === $o['in'] && null === $o['pkg'] ) ? array_keys( PROFILES ) : array( $abname );
+	$ok = true;
+	foreach ( $names as $name ) {
+		$p = profile( $name );
+		echo "[check] {$name}\n";
+		$ok = check_pair( $root, $o['in'] ?? $root . '/' . $p['fixture'], $o['pkg'] ?? $root . '/' . $p['package'], $absText ) && $ok;
+	}
+	if ( ! $ok ) {
 		return 1;
 	}
 	echo "[check] OK: round-trip invariant holds.\n";
 	return 0;
 }
 
-/** Ability name alone (for default reverse out path). */
+/** Ability name alone (for default out paths). */
 function reverse_ability_name( string $coreText ): string {
 	$tokens = tokenize_source( $coreText );
 	$cls = parse_class( $tokens );
 	$members = parse_members( $tokens, $cls['open'], $cls['close'] );
-	$by = index_by_name( $members );
-	isset( $by['register_content_query'] ) || fail( 'no register_content_query() in core form' );
-	$rec = $by['register_content_query'];
-	$stmts = body_statements( $tokens, $rec['open'], $rec['close'] );
-	list( $idx ) = registration_stmt( $tokens, $stmts );
-	list( $abname, $entries ) = parse_registration( $tokens, $stmts[ $idx ] );
+	list( , $stmts, $idx ) = core_registration_method( $tokens, $members );
+	list( $abname ) = parse_registration( $tokens, $stmts[ $idx ] );
 	return $abname;
 }
 

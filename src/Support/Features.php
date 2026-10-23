@@ -26,7 +26,8 @@ final class Features {
 	 * @var array<string, string>
 	 */
 	private static $polyfills = array(
-		'show_in_abilities' => 'polyfills/show-in-abilities.php',
+		'show_in_abilities'         => 'polyfills/show-in-abilities.php',
+		'setting_show_in_abilities' => 'polyfills/setting-show-in-abilities.php',
 	);
 
 	/**
@@ -50,6 +51,10 @@ final class Features {
 	public static function is_available( string $feature ): bool {
 		if ( 'show_in_abilities' === $feature ) {
 			return self::is_show_in_abilities_available();
+		}
+
+		if ( 'setting_show_in_abilities' === $feature ) {
+			return self::is_setting_show_in_abilities_available();
 		}
 
 		return false;
@@ -92,5 +97,23 @@ final class Features {
 		}
 
 		return isset( self::$loaded['show_in_abilities'] );
+	}
+
+	/**
+	 * Detects the `show_in_abilities` setting registration argument.
+	 *
+	 * Core declares it in register_setting() since 7.2, together with
+	 * _wp_register_initial_settings_for_abilities(), which flags and registers
+	 * core's own settings before the abilities read them; the function is the
+	 * detectable half.
+	 *
+	 * @return bool
+	 */
+	private static function is_setting_show_in_abilities_available(): bool {
+		if ( function_exists( '_wp_register_initial_settings_for_abilities' ) ) {
+			return true;
+		}
+
+		return isset( self::$loaded['setting_show_in_abilities'] );
 	}
 }

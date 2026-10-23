@@ -782,11 +782,9 @@ final class RegistrarTest extends TestCase {
 			self::assertTrue( wp_has_ability( 'core/content-create' ), 'P8: restored — the manifest abilities register again for the following suites.' );
 
 			// The restored boot must have registered quietly from the Registrar's
-			// side: no Gate-8 rejection, no category complaints. The host API's
-			// own constructor notices for the re-instantiated abilities are
-			// tolerated pre-existing host noise (the pre-7.2 WP_Ability does not
-			// accept the core-landing-ready `required_capabilities` argument;
-			// trunk's does).
+			// side: no Gate-8 rejection, no category complaints. Only the
+			// Registrar's own traffic is asserted here; the abilities' own
+			// construction is covered by SettingsGetTest.
 			$registrar_traffic = array_intersect_key(
 				self::$wrong_usage,
 				array_fill_keys(
@@ -912,6 +910,157 @@ final class RegistrarTest extends TestCase {
 			)
 		);
 		self::assertSame( array(), $registrar_traffic, 'P8: the restored boot registers without any Registrar wrong-usage traffic.' );
+		self::reset_wrong_usage();
+	}
+
+	/**
+	 * 10. Gate 7 readiness: an ability whose should_register() declines (core's
+	 * register() early return, e.g. nothing to expose) is skipped silently and
+	 * never reaches the registry, once its support-surface features pass.
+	 */
+	public function test_readiness_gate_skips_declining_ability(): void {
+		$declining = new class() extends Abstract_Core_Ability {
+
+			/**
+			 * The full ability name, including its tier prefix.
+			 */
+			protected function ability_name(): string {
+				return 'test/registrar-declining';
+			}
+
+			/**
+			 * The human-readable ability label.
+			 */
+			protected function label(): string {
+				return 'Registrar test declining ability';
+			}
+
+			/**
+			 * A detailed description of what the ability does.
+			 */
+			protected function description(): string {
+				return 'Synthetic ability whose readiness check declines registration. Never ships in the manifest.';
+			}
+
+			/**
+			 * The ability category slug.
+			 */
+			protected function category_slug(): string {
+				return 'content';
+			}
+
+			/**
+			 * The JSON Schema definition for the ability's input.
+			 */
+			protected function input_schema(): array {
+				return array();
+			}
+
+			/**
+			 * The JSON Schema definition for the ability's output.
+			 */
+			protected function output_schema(): array {
+				return array();
+			}
+
+			/**
+			 * Builds the execute callback.
+			 */
+			protected function make_execute_callback(): callable {
+				return static function (): array {
+					return array();
+				};
+			}
+
+			/**
+			 * No permission callback: the floor owns authorization.
+			 */
+			protected function make_permission_callback(): ?callable {
+				return null;
+			}
+
+			/**
+			 * The ability meta.
+			 */
+			protected function ability_meta(): array {
+				return array( 'public' => true );
+			}
+
+			/**
+			 * The request-level capability floor.
+			 */
+			protected function required_capabilities(): array {
+				return array( 'manage_options' );
+			}
+
+			/**
+			 * Declines registration, as core's register() returns early.
+			 */
+			public function should_register(): bool {
+				return false;
+			}
+		};
+
+		$entry          = self::synthetic_entry();
+		$entry['name']  = 'test/registrar-declining';
+		$entry['class'] = get_class( $declining );
+
+		self::reset_wrong_usage();
+		self::assertFalse( self::try_register_entry( 'test/registrar-declining', $entry ), 'A declining ability is skipped.' );
+		self::assertFalse( wp_has_ability( 'test/registrar-declining' ), 'A declining ability never reaches the registry.' );
+		self::assert_no_wrong_usage( 'The readiness skip is silent.' );
+
+		$overrides = new ReflectionMethod( Registrar::class, 'overrides_readiness' );
+		$overrides->setAccessible( true ); // No-op on PHP 8.1+, required on 7.4.
+		self::assertTrue( $overrides->invoke( null, get_class( $declining ) ), 'A class declaring should_register() is probed.' );
+		self::assertFalse( $overrides->invoke( null, Manifest::get( 'core/content-query' )['class'] ), 'A class keeping the default is not probed.' );
+	}
+
+	/**
+	 * 11. Deferred registrations preload their support features at priority 1
+	 * of `wp_abilities_api_init`, where core prepares its own support surface
+	 * on 7.2+, so a site's changes at priorities 2-9 are not undone.
+	 */
+	public function test_deferred_registration_preloads_features_at_priority_one(): void {
+		$preload_hooked = new ReflectionProperty( Registrar::class, 'preload_hooked' );
+		$preloads       = new ReflectionProperty( Registrar::class, 'preloads' );
+		$preload_hooked->setAccessible( true ); // No-op on PHP 8.1+, required on 7.4.
+		$preloads->setAccessible( true );
+
+		self::open_fresh_init_window();
+		$preload_hooked->setValue( null, false );
+		$preloads->setValue( null, array() );
+
+		$hook   = $GLOBALS['wp_filter']['wp_abilities_api_init'] ?? null;
+		$before = $hook ? count( $hook->callbacks[1] ?? array() ) : 0;
+
+		$vetoed = static function ( string $name ): bool {
+			return 'core/content-create' !== $name;
+		};
+		Registrar::register_all( array( 'filter' => $vetoed ) );
+		Registrar::register( 'core/settings-get' );
+
+		self::assertCount( $before + 1, $GLOBALS['wp_filter']['wp_abilities_api_init']->callbacks[1], 'One preload callback is queued at priority 1.' );
+		self::assertSame( Manifest::names(), array_keys( $preloads->getValue() ), 'Every deferred name is queued once.' );
+		self::assertSame( array( 'filter' => $vetoed ), $preloads->getValue()['core/settings-get'], 'The first queued selection policy is kept.' );
+
+		self::reset_wrong_usage();
+		self::silence_notices(
+			static function (): void {
+				WP_Abilities_Registry::get_instance(); // Re-fires wp_abilities_api_init: preload, then the deferred registrations.
+			}
+		);
+		self::assertTrue( wp_has_ability( 'core/settings-get' ), 'The deferred registration runs after the preload.' );
+
+		// Restore the settled registry for the following suites.
+		self::open_fresh_init_window();
+		Registrar::register_all();
+		self::silence_notices(
+			static function (): void {
+				WP_Abilities_Registry::get_instance();
+			}
+		);
+		self::assertTrue( wp_has_ability( 'core/content-create' ), 'Restored: the manifest abilities register again for the following suites.' );
 		self::reset_wrong_usage();
 	}
 }
