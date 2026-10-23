@@ -12,3 +12,5 @@ parameters:
 	stubFiles:
 		# Abilities API symbols (new in core trunk, not yet in phpstan-wordpress).
 		- .stubs/abilities-api.php
+		# get_registered_settings() as of 7.2 (phpstan-wordpress predates `show_in_abilities`).
+		- .stubs/option.php

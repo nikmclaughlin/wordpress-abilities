@@ -60,6 +60,30 @@ final class Manifest {
 				// the landed core work (wordpress-develop PR 12195) before release.
 				'proposal'       => 'https://github.com/WordPress/wordpress-develop/pull/12195',
 			),
+			'core/settings-get'   => array(
+				'name'           => 'core/settings-get',
+				'class'          => Settings\Settings_Get::class,
+				'category'       => 'site',
+				'tier'           => self::TIER_CORE,
+				'min_wp_version' => '6.9',
+				'core_since'     => '7.2',
+				'requires'       => array( 'setting_show_in_abilities' ),
+				'renamed_from'   => null,
+				// Landed in trunk as b6512b1e8c (Trac #64605), developed in this PR.
+				'proposal'       => 'https://github.com/WordPress/wordpress-develop/pull/12141',
+			),
+			'core/users-query'    => array(
+				'name'           => 'core/users-query',
+				'class'          => Users\Users_Query::class,
+				'category'       => 'user',
+				'tier'           => self::TIER_CORE,
+				'min_wp_version' => '6.9',
+				'core_since'     => '7.2',
+				'requires'       => array(),
+				'renamed_from'   => null,
+				// Landed in trunk as 39981fd0fe (Trac #64657), developed in this PR.
+				'proposal'       => 'https://github.com/WordPress/wordpress-develop/pull/10775',
+			),
 			/*
 			 * The write trio below is a faithful port of WordPress/ai PR #1025
 			 * (author @jorgefilipecosta), on the package's dotted field paths.

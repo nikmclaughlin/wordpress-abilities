@@ -83,9 +83,13 @@ abstract class Abstract_Core_Ability extends WP_Ability {
 	 * Handles row/status-level checks and must fail closed on malformed
 	 * input. Return false or a WP_Error to deny.
 	 *
-	 * @return callable(mixed): (bool|\WP_Error)
+	 * Return null when the required capabilities fully own authorization, as
+	 * core allows since 7.2 for an ability that declares a non-empty
+	 * `required_capabilities` list and no `permission_callback`.
+	 *
+	 * @return (callable(mixed): (bool|\WP_Error))|null
 	 */
-	abstract protected function make_permission_callback(): callable;
+	abstract protected function make_permission_callback(): ?callable;
 
 	/**
 	 * The ability meta authored by this ability.
@@ -110,6 +114,29 @@ abstract class Abstract_Core_Ability extends WP_Ability {
 	 * @return list<string>
 	 */
 	abstract protected function required_capabilities(): array;
+
+	/**
+	 * Computes the registration-time state the other authoring methods read.
+	 *
+	 * Called once, first, by the constructor. Mirrors the state core computes
+	 * in its register() entry point before registering the ability, such as
+	 * a snapshot that the input schema, output schema, and execute callback
+	 * must all share. Most abilities have none and keep this no-op.
+	 */
+	protected function prepare(): void {}
+
+	/**
+	 * Whether the ability should be registered at all.
+	 *
+	 * Mirrors the early return core takes in its register() entry
+	 * point, for example when there is nothing to expose. Most
+	 * abilities always register and keep the default.
+	 *
+	 * @return bool True to register the ability.
+	 */
+	public function should_register(): bool {
+		return true;
+	}
 
 	/**
 	 * Provenance meta merged into every ability of this package.
@@ -160,20 +187,73 @@ abstract class Abstract_Core_Ability extends WP_Ability {
 			);
 		}
 
-		parent::__construct(
-			$ability_name,
-			array(
-				'label'                 => $this->label(),
-				'description'           => $this->description(),
-				'category'              => $this->category_slug(),
-				'input_schema'          => $this->input_schema(),
-				'output_schema'         => $this->output_schema(),
-				'execute_callback'      => $this->make_execute_callback(),
-				'permission_callback'   => $this->make_permission_callback(),
-				'required_capabilities' => $this->required_capabilities(),
-				'meta'                  => $this->merge_meta( $args ),
-			)
+		$this->prepare();
+
+		$properties = array(
+			'label'            => $this->label(),
+			'description'      => $this->description(),
+			'category'         => $this->category_slug(),
+			'input_schema'     => $this->input_schema(),
+			'output_schema'    => $this->output_schema(),
+			'execute_callback' => $this->make_execute_callback(),
+			'meta'             => $this->merge_meta( $args ),
 		);
+
+		$permission_callback   = $this->make_permission_callback();
+		$required_capabilities = $this->required_capabilities();
+
+		if ( self::host_checks_required_capabilities() ) {
+			$properties['permission_callback']   = $permission_callback;
+			$properties['required_capabilities'] = $required_capabilities;
+		} else {
+			$properties['permission_callback'] = self::with_capability_floor( $required_capabilities, $permission_callback );
+		}
+
+		parent::__construct( $ability_name, $properties );
+	}
+
+	/**
+	 * Whether the host's WP_Ability checks `required_capabilities` itself.
+	 *
+	 * Core added the argument in 7.2. Older hosts reject it as an unknown
+	 * property and would never check the floor, so the constructor folds the
+	 * floor into the permission callback there instead.
+	 *
+	 * @return bool True when the host declares the `required_capabilities` property.
+	 */
+	private static function host_checks_required_capabilities(): bool {
+		return property_exists( WP_Ability::class, 'required_capabilities' );
+	}
+
+	/**
+	 * Wraps a permission callback with the required capabilities check.
+	 *
+	 * Mirrors WP_Ability::check_permissions() on 7.2+: every required
+	 * capability is checked first, and the permission callback runs only
+	 * when all of them pass. Without a permission callback, the floor alone
+	 * decides; an empty floor without a callback fails closed.
+	 *
+	 * @param list<string>                                  $required_capabilities The capability floor.
+	 * @param (callable(mixed): (bool|\WP_Error))|null $permission_callback   The authored permission callback.
+	 * @return callable(mixed): (bool|\WP_Error) The combined permission callback.
+	 */
+	private static function with_capability_floor( array $required_capabilities, ?callable $permission_callback ): callable {
+		if ( array() === $required_capabilities ) {
+			// No floor to fold in: keep the callback, or fail closed without one.
+			return $permission_callback ?? static function (): bool {
+				return false;
+			};
+		}
+
+		return static function ( ...$args ) use ( $required_capabilities, $permission_callback ) {
+			foreach ( $required_capabilities as $capability ) {
+				if ( ! current_user_can( $capability ) ) {
+					return false;
+				}
+			}
+
+			return null === $permission_callback ? true : $permission_callback( ...$args );
+		};
 	}
 
 	/**

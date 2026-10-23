@@ -74,10 +74,13 @@ registration under the old name are **rejected** — no exceptions, ever.
   deliberately carries no version field — and must match the newest git tag
   when tags exist, else the `0.1.0` seed).
 - `verify:coreify` — the coreify round-trip gate (`tools/coreify.php
-  --check`): reverse of the trunk fixture followed by forward must
-  reproduce the original core file, and the reverse output must match the
-  hand-port `src/Content/Content_Query.php`, modulo whitespace and
-  comments.
+  --check`), for every tier-core ability with a transform profile
+  (`core/content-query`, `core/settings-get`, `core/users-query`): reverse
+  of the trunk fixture followed by forward must reproduce the original core
+  file, and the reverse output must match the hand-port
+  (`src/Content/Content_Query.php`, `src/Settings/Settings_Get.php`,
+  `src/Users/Users_Query.php`), modulo whitespace and comments. A new
+  tier-core backport adds its profile to `PROFILES` in `tools/coreify.php`.
 - PHPUnit on both environments — WordPress trunk and latest stable. Both
   ship the Abilities API in core (the 6.9+ support floor; stable pre-7.2
   carries the real pre-7.2 API), so core-skip and backport paths are both
