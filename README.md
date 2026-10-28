@@ -47,6 +47,57 @@ package has no opinion.)*
    a `class_exists( 'WordPress\Abilities\Registrar' )` guard or a shared
    autoloader; your choice. The package takes no position on which
    mechanism you use.
+
+   - **Optional (WordPress-plugin bundling): multi-copy arbitration.**
+     In the WordPress-plugin world, several active plugins may each bundle
+     the package in their own `vendor/`. Plain autoloading then decides
+     "who defines the classes" by load order, and an older winning copy can
+     fatal a current consumer (`class not found` for an ability class the
+     consumer's own copy contains). For exactly this case the package ships
+     an **optional arbitration loader**, following the pattern proven by
+     [Action Scheduler](https://actionscheduler.org/usage/) ("Action
+     Scheduler will register the version in that file and then load the
+     most recent version of itself on the site"), adapted so the newest
+     copy always loads. The loader lives at the package root as
+     `wordpress-abilities-loader.php`, ships in the dist, and is **never
+     registered in composer autoload**: it is opt-in. A plugin that bundles
+     the package requires the loader of ITS OWN copy at plugin file scope —
+     before any use of the package's classes — and registers that copy:
+
+     ```php
+     // Plugin file scope, before anything touches the package's classes.
+     require_once __DIR__ . '/vendor/wordpress/abilities/wordpress-abilities-loader.php';
+     wordpress_abilities_register( '0.1.0', __DIR__ . '/vendor/wordpress/abilities' );
+     ```
+
+     - **Newest wins.** Every bundled copy registers the same way; a single
+       autoloader then serves all `WordPress\Abilities\` classes from the
+       copy with the highest declared version (`version_compare` semantics;
+       the first registration of an equal version wins the tie), regardless
+       of which plugin included its loader first.
+     - **Arbitration is lazy.** The winner is decided at the first class
+       resolution, not at registration time — a library cannot assume
+       WordPress hooks exist when its file is included — so every bundled
+       copy in the process can register first even when the copies'
+       includes arrive ahead of some plugins. Once a class has actually
+       loaded, PHP has defined it: later registrations are ignored, with a
+       diagnostic notice (WordPress `_doing_it_wrong()` where available,
+       otherwise a plain `trigger_error()` notice).
+     - **The functions are a frozen public contract.**
+       `wordpress_abilities_register()` and
+       `wordpress_abilities_loaded_version()` (which returns the winning
+       version once resolved, `null` before — handy diagnostics) must
+       behave identically across all package versions, because whichever
+       copy's loader file is required first defines them for the whole
+       process. Action Scheduler's versioned
+       `action_scheduler_register_3_x()` functions are the same precedent.
+     - **Composer-native consumers are unaffected.** Without an explicit
+       `require` of the loader, nothing about the above applies; item 1
+       here remains the entire contract.
+
+     *(Spike draft from branch `spike/loader-arbitration`, pending review —
+     the loader contract is proven by
+     `tools/loader-spike/test-loader.php` on that branch.)*
 2. **Register on your own gating and timing** — call
    `Registrar::register_all()` or `Registrar::register( 'core/content-query' )`
    as early as your plugin has the API, typically at plugin load; the
