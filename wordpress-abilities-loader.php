@@ -306,7 +306,7 @@ if ( ! function_exists( 'wordpress_abilities_register' ) ) {
 	 */
 	function _wordpress_abilities_notice( string $message ): void {
 		if ( function_exists( '_doing_it_wrong' ) ) {
-			_doing_it_wrong( 'wordpress_abilities_register', $message, 'wordpress-abilities-loader' );
+			_doing_it_wrong( 'wordpress_abilities_register', $message, '0.1.0' );
 
 			return;
 		}
