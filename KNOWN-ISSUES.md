@@ -32,3 +32,19 @@ until core decides otherwise:
 - Deletion formats the post before deleting it.
 - `get_post_by_slug` is unreachable via the write schemas — a dead path kept
   for parity with core.
+- `wp/media-query` (WordPress/ai PR #1098):
+  - A status the caller may not query reports `media_invalid_param` (with a
+    400 status), not the ability framework's `ability_invalid_permissions` —
+    the PR wraps its internal status error in the execute callback.
+  - `exclude` is ignored when `include` is given, and MIME types the site
+    does not allow are ignored by the `mime_type` filter.
+  - Totals count items withheld from the caller, and a page past the last one
+    still errors even when every row of it would have been withheld.
+  - A missing item is denied like an unreadable one (same error), so IDs
+    cannot be probed.
+  - The generated caption of a password-protected item stays gated even for
+    editors, while its rendered description is not (verified identical on
+    trunk and stable).
+  - With raw fields requested, a collection is answered in the edit context:
+    items the caller cannot edit are withheld from the list but still counted
+    in the totals.

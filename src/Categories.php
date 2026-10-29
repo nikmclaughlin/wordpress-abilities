@@ -20,7 +20,9 @@ namespace WordPress\Abilities;
  * (wordpress-develop trunk, wp_register_core_ability_categories()) verbatim,
  * including being passed through the `default` text domain at declaration
  * time, so the package's declarations are indistinguishable from core's own
- * on 7.2+ hosts. This is not a general category registry: keep an entry in
+ * on 7.2+ hosts — with one exception: the `media` category is package-authored
+ * (core trunk registers no media category; nothing to copy verbatim from
+ * trunk). This is not a general category registry: keep an entry in
  * this table only for as long as the manifest declares a category that
  * needs it, and keep the strings in sync when a trunk refresh changes them.
  *
@@ -49,6 +51,18 @@ final class Categories {
 		'content' => array(
 			'label'       => 'Content',
 			'description' => 'Abilities that retrieve or manage posts and other content.',
+		),
+		/*
+		 * Package-authored, for the `wp/media-query` port: core trunk registers no
+		 * `media` ability category (wp_register_core_ability_categories() covers
+		 * `site`, `user`, `content`, and `uncategorized`), so there is nothing to
+		 * copy verbatim. Styled like trunk's own registrations; keep it in sync
+		 * with the same trunk refresh cadence as the entries above. If core lands
+		 * a media category, replace this definition with core's verbatim strings.
+		 */
+		'media'   => array(
+			'label'       => 'Media',
+			'description' => 'Abilities that retrieve or manage media items and attachments.',
 		),
 	);
 

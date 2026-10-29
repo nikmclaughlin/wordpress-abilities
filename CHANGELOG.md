@@ -78,6 +78,23 @@ The entries below describe the current prototype state._
   path), and a dual wp-env matrix — WordPress trunk and latest stable —
   running against the core-provided Abilities API on both (WordPress 6.9+
   ships it in core; a hard bootstrap guard enforces that premise).
+- `wp/media-query` — tier `experimental` (incubating under the `wp/` prefix:
+  no name or schema promises until it files a core proposal): faithful port
+  of the read-only media query ability from
+  [WordPress/ai PR #1098](https://github.com/WordPress/ai/pull/1098) by
+  @jorgefilipecosta. Reads media library items: a single item by ID, or a
+  paginated collection (`media`/`total`/`total_pages`) filtered by search
+  (titles, captions, descriptions, and file names), media type, MIME type,
+  parent, author, include/exclude, and status; `fields` selects the returned
+  subset (always with the ID) with a lean default set, and raw fields require
+  edit access. Keeps the PR's documented attachments-endpoint quirks: totals
+  count items withheld from the caller; `exclude` is ignored when `include`
+  is given; MIME types the site does not allow are ignored; a queryable but
+  forbidden status reports `media_invalid_param`; a missing item is denied
+  like an unreadable one; and the generated caption of a password-protected
+  item stays gated while its rendered description is not. Ships with the
+  package-authored `media` ability category (core trunk has no media category
+  to copy).
 ### Removed
 
 - `wp/post-create` — the self-authored experimental write-ability prototype
