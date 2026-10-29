@@ -2,11 +2,12 @@
 /**
  * TRUNK SNAPSHOT — manually refreshed copy from WordPress/wordpress-develop trunk.
  * Original core path (for refresh): src/wp-includes/abilities/class-wp-abilities-users.php
- * Refreshed: 2026-10-20 by WP2 (test infrastructure).
+ * Refreshed: 2026-10-20 by WP2 (test infrastructure); re-verified identical
+ * to trunk 2026-10-23 (WP7).
  *
- * Tracked trunk reference kept in place for the planned `core/users-query`
- * backport (a future coreify round-trip reference; the gate currently reads
- * the content snapshot). Only this file-level header is package-local; the
+ * Tracked trunk reference for the coreify round-trip gate of the
+ * `core/users-query` backport: tools/coreify.php --check reads this file
+ * for that profile. Only this file-level header is package-local; the
  * code body below stays byte-faithful to trunk. Never loaded as code
  * anymore: the Abilities API ships in WordPress core since 6.9 and the
  * tests assume it. NOT package code: never shipped, never autoloaded.

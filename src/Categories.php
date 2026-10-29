@@ -42,6 +42,10 @@ final class Categories {
 			'label'       => 'Site',
 			'description' => 'Abilities that retrieve or modify site information and settings.',
 		),
+		'user'    => array(
+			'label'       => 'User',
+			'description' => 'Abilities that retrieve or modify user information and settings.',
+		),
 		'content' => array(
 			'label'       => 'Content',
 			'description' => 'Abilities that retrieve or manage posts and other content.',

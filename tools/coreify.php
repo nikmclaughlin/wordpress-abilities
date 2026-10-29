@@ -132,6 +132,21 @@ const PROFILES = array(
 		'requires'      => array( 'setting_show_in_abilities' ),
 		'proposal'      => 'https://github.com/WordPress/wordpress-develop/pull/12141',
 	),
+	'core/users-query'   => array(
+		'fixture'       => 'tests/Fixtures/abilities-api/abilities/class-wp-abilities-users.php',
+		'package'       => 'src/Users/Users_Query.php',
+		'splice_after'  => null,
+		'helpers'       => array(
+			'get_input_object' => 'execute_users_query',
+			'parse_filter_int' => 'get_input_object',
+		),
+		'imports'       => array( 'WP_Error', 'WP_User', 'WP_User_Query' ),
+		'register_doc'  => 'Registers all user abilities.',
+		'register_note' => array(),
+		'category'      => 'user',
+		'requires'      => array(),
+		'proposal'      => 'https://github.com/WordPress/wordpress-develop/pull/10775',
+	),
 );
 
 /** Ability whose files the forward and reverse modes default to. */
@@ -1205,7 +1220,7 @@ function build_manifest( string $abname ): string {
 		"\t'tier'           => 'core',",
 		"\t'min_wp_version' => '6.9',",
 		"\t'core_since'     => '7.2',",
-		"\t'requires'       => array( " . implode( ', ', $requires ) . ' ),',
+		"\t'requires'       => " . ( array() === $requires ? 'array()' : 'array( ' . implode( ', ', $requires ) . ' )' ) . ',',
 		"\t'renamed_from'   => null,",
 		"\t'proposal'       => '" . $prof['proposal'] . "',",
 		"),",
@@ -1500,7 +1515,8 @@ Usage:
   php coreify.php --check [--ability <name>] [--in <path>] [--pkg <path>] [--abs <path>]
   php coreify.php --help
 
-Abilities with a transform profile: core/content-query, core/settings-get.
+Abilities with a transform profile: core/content-query, core/settings-get,
+  core/users-query.
 
 Modes:
   (default)  forward: package -> core form. Input defaults to the ability's

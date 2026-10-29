@@ -505,7 +505,8 @@ final class RegistrarTest extends TestCase {
 
 		/*
 		 * The consumer filter veto, driven through a name core never
-		 * provides: only `core/content-query` can be core-provided (on
+		 * provides: only the tier-core backports (`core/content-query`,
+		 * `core/settings-get`, `core/users-query`) can be core-provided (on
 		 * trunk), so this path is deterministic on both envs — and the
 		 * first init window ran under the version floor, so the name is
 		 * not in-process registered here either.
