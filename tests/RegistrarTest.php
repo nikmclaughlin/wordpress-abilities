@@ -27,6 +27,7 @@ namespace WordPress\Abilities\Tests;
 use ReflectionMethod;
 use ReflectionProperty;
 use WordPress\Abilities\Abstract_Core_Ability;
+use WordPress\Abilities\Categories;
 use WordPress\Abilities\Manifest;
 use WordPress\Abilities\Registrar;
 use WP_Abilities_Registry;
@@ -207,6 +208,29 @@ final class RegistrarTest extends TestCase {
 		$instance->setValue( null, null );
 
 		$GLOBALS['wp_actions']['wp_abilities_api_categories_init'] = 0;
+	}
+
+	/**
+	 * The manifest-declared categories missing from the registry right now.
+	 *
+	 * The P8 tests must not version-sniff the host, so they observe the
+	 * post-window state instead: whichever manifest slugs are absent are the
+	 * Registrar-declared-only ones. With the package-authored `media`
+	 * category in the manifest, a 7.2+ host is a mixed host (it provides the
+	 * original slugs itself; the package declares `media`), so the old
+	 * complete-vs-category-less split generalizes to this list.
+	 *
+	 * @return list<string>
+	 */
+	private static function manifest_categories_missing_now(): array {
+		$missing = array();
+		foreach ( Categories::required_slugs() as $required_slug ) {
+			if ( ! wp_has_ability_category( $required_slug ) ) {
+				$missing[] = $required_slug;
+			}
+		}
+
+		return $missing;
 	}
 
 	/**
@@ -746,28 +770,54 @@ final class RegistrarTest extends TestCase {
 			}
 		);
 
-		if ( wp_has_ability_category( 'content' ) ) {
-			// Host-owned category source (see above): the content slug cannot
+		/*
+		 * The host may provide every manifest category (as when the manifest
+		 * only carried core's own default slugs), some of them (7.2+ core plus
+		 * the package's package-authored `media` category), or none of the
+		 * package-declared ones (7.2- hosts). Observe which manifest slugs the
+		 * opted-out replayed window leaves behind: whichever are missing are
+		 * the Registrar-declared-only ones.
+		 */
+		$missing = self::manifest_categories_missing_now();
+
+		if ( array() === $missing ) {
+			// Host-owned category source (see above): no manifest slug can
 			// witness the opt-out; assert the settled, silent state instead.
 			remove_filter( 'wordpress_abilities_declare_categories', '__return_false' );
-			self::assertTrue( wp_has_ability( 'core/content-create' ), 'P8: manifest abilities register where the host registers the category itself.' );
-			self::assert_no_wrong_usage( 'P8: the opted-out declaration is silent on a host whose own registrar provides the category.' );
+			self::assertTrue( wp_has_ability( 'core/content-create' ), 'P8: manifest abilities register where the host registers the categories themselves.' );
+			self::assert_no_wrong_usage( 'P8: the opted-out declaration is silent on a host whose own registrar provides the categories.' );
 		} else {
-			self::assertFalse( wp_has_ability_category( 'content' ), 'P8: with the opt-out filter on, the Registrar must not declare the manifest category.' );
+			foreach ( $missing as $missing_slug ) {
+				self::assertFalse(
+					wp_has_ability_category( $missing_slug ),
+					sprintf( 'P8: with the opt-out filter on, the Registrar must not declare the missing %1$s category.', $missing_slug )
+				);
+			}
 
 			$messages = self::$wrong_usage['WordPress\Abilities\Registrar::try_register'] ?? array();
 			self::assertNotEmpty(
 				$messages,
-				'P8: with the opt-out filter the manifest abilities are Gate-8 rejected; the rejection must be loud, not silent.'
+				'P8: with the opt-out filter the manifest abilities of a missing category are Gate-8 rejected; the rejection must be loud, not silent.'
 			);
 			$named = null;
 			foreach ( $messages as $message ) {
-				if ( strpos( $message, 'content' ) !== false ) {
-					$named = $message;
-					break;
+				foreach ( $missing as $missing_slug ) {
+					if ( false !== strpos( $message, $missing_slug ) ) {
+						$named = $message;
+						break 2;
+					}
 				}
 			}
 			self::assertNotNull( $named, 'P8: the loud Gate-8 notices must name the missing manifest category.' );
+
+			if ( wp_has_ability_category( 'content' ) ) {
+				self::assertTrue(
+					wp_has_ability( 'core/content-create' ),
+					'P8: the abilities of host-provided categories register despite the opted-out declaration of another manifest category.'
+				);
+			} else {
+				self::assertFalse( wp_has_ability( 'core/content-create' ), 'P8: nothing registers when the host provides no manifest category.' );
+			}
 
 			// Restore the boot for the suites that read it after this class:
 			// remove the opt-out, replay both windows, let the Registrar declare.
@@ -779,7 +829,12 @@ final class RegistrarTest extends TestCase {
 			Registrar::register_all();
 			WP_Abilities_Registry::get_instance();
 
-			self::assertTrue( wp_has_ability_category( 'content' ), 'P8: restored — the Registrar declares the manifest category again once the filter is removed.' );
+			foreach ( Categories::required_slugs() as $restored_slug ) {
+				self::assertTrue(
+					wp_has_ability_category( $restored_slug ),
+					sprintf( 'P8: restored — the package-declared %1$s category is declared again once the filter is removed.', $restored_slug )
+				);
+			}
 			self::assertTrue( wp_has_ability( 'core/content-create' ), 'P8: restored — the manifest abilities register again for the following suites.' );
 
 			// The restored boot must have registered quietly from the Registrar's
@@ -856,21 +911,55 @@ final class RegistrarTest extends TestCase {
 		// once the categories action fired, and none did.
 		self::assertArrayNotHasKey( 20, $GLOBALS['wp_filter']['wp_abilities_api_categories_init']->callbacks, 'P8: no new declaring callback was queued by the late first contact.' );
 
-		if ( wp_has_ability_category( 'content' ) ) {
-			// Host-provided category (7.2+ core, or a consumer plugin): the
+		/*
+		 * The host may provide every manifest category, some of them (7.2+
+		 * core plus the package's package-authored `media` category), or none
+		 * of the package-declared ones (7.2- hosts). Observe which manifest
+		 * slugs the evicted-declarer window leaves behind: whichever are
+		 * missing are the Registrar-declared-only ones.
+		 */
+		$missing = self::manifest_categories_missing_now();
+
+		if ( array() === $missing ) {
+			// Host-provided categories (7.2+ core, or a consumer plugin): the
 			// late first contact is safe and silent.
-			self::assertTrue( wp_has_ability( 'core/content-create' ), 'P8: a late first contact registers where the host provides the manifest category.' );
-			self::assert_no_wrong_usage( 'P8: a late first contact is silent where the host provides the manifest category.' );
+			self::assertTrue( wp_has_ability( 'core/content-create' ), 'P8: a late first contact registers where the host provides the manifest categories.' );
+			self::assert_no_wrong_usage( 'P8: a late first contact is silent where the host provides the manifest categories.' );
 		} else {
-			// Category-less host (pre-7.2): nothing registered, and every
-			// rejection named the category loudly.
-			self::assertFalse( wp_has_ability_category( 'content' ), 'P8 precondition: the manifest category is genuinely absent on this host.' );
-			self::assertFalse( wp_has_ability( 'core/content-create' ), 'P8: nothing registers when the first contact is late on a category-less host.' );
+			// At least one package-declared-only category: the abilities that
+			// need it register nowhere, and every rejection names the category
+			// loudly.
+			foreach ( $missing as $missing_slug ) {
+				self::assertFalse(
+					wp_has_ability_category( $missing_slug ),
+					sprintf( 'P8 precondition: the manifest category %1$s is genuinely absent on this host at the late first contact.', $missing_slug )
+				);
+			}
+
+			if ( wp_has_ability_category( 'content' ) ) {
+				self::assertTrue(
+					wp_has_ability( 'core/content-create' ),
+					'P8: the abilities of host-provided categories register despite the missing declaration of another manifest category.'
+				);
+			} else {
+				self::assertFalse( wp_has_ability( 'core/content-create' ), 'P8: nothing registers when the first contact is late on a host that provides no manifest category.' );
+			}
 
 			$messages = self::$wrong_usage['WordPress\Abilities\Registrar::try_register'] ?? array();
-			self::assertNotEmpty( $messages, 'P8: the late first contact on a category-less host is Gate-8 rejected loudly, not silently.' );
+			self::assertNotEmpty(
+				$messages,
+				'P8: the late first contact for the abilities of a missing category is Gate-8 rejected loudly, not silently.'
+			);
 			foreach ( $messages as $message ) {
-				self::assertStringContainsString( 'content', $message, 'P8: each loud rejection names the missing manifest category.' );
+				self::assertTrue(
+					(bool) array_filter(
+						$missing,
+						static function ( string $missing_slug ) use ( $message ): bool {
+							return false !== strpos( $message, $missing_slug );
+						}
+					),
+					'P8: each loud rejection names the missing manifest category.'
+				);
 			}
 		}
 
@@ -896,7 +985,12 @@ final class RegistrarTest extends TestCase {
 			}
 		);
 
-		self::assertTrue( wp_has_ability_category( 'content' ), 'P8: restored — the Registrar declares the manifest category again.' );
+		foreach ( Categories::required_slugs() as $restored_slug ) {
+			self::assertTrue(
+				wp_has_ability_category( $restored_slug ),
+				sprintf( 'P8: restored — the package-declared %1$s category is declared again.', $restored_slug )
+			);
+		}
 		self::assertTrue( wp_has_ability( 'core/content-create' ), 'P8: restored — the manifest abilities register again for the following suites.' );
 
 		$registrar_traffic = array_intersect_key(

@@ -126,6 +126,28 @@ final class Manifest {
 				'renamed_from'   => null,
 				'proposal'       => 'https://github.com/WordPress/ai/pull/1025',
 			),
+			/*
+			 * The media query below is a faithful port of WordPress/ai PR #1098
+			 * (author @jorgefilipecosta).
+			 *
+			 * Tier: experimental, incubating under the `wp/` prefix — the proposal
+			 * below is the PR's paper trail, but the ability has NOT landed in
+			 * core (`core_since` stays null and flips when core lands it), so its
+			 * name and schema carry no promises yet (NAME-LIFECYCLE.md). It uses
+			 * the package-authored `media` ability category (core trunk has no
+			 * media category; see Categories).
+			 */
+			'wp/media-query'      => array(
+				'name'           => 'wp/media-query',
+				'class'          => Media\Media_Query::class,
+				'category'       => 'media',
+				'tier'           => self::TIER_EXPERIMENTAL,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array(),
+				'renamed_from'   => null,
+				'proposal'       => 'https://github.com/WordPress/ai/pull/1098',
+			),
 		);
 	}
 

@@ -90,13 +90,18 @@ Full rules, the promotion path, and the rename protocol are in
 | `core/content-create` | stable | content | Port of the content create ability from [WordPress/ai PR #1025](https://github.com/WordPress/ai/pull/1025) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Creates posts of types exposed to abilities under the field names `core/content-query` returns. |
 | `core/content-update` | stable | content | Port of the content update ability from [WordPress/ai PR #1025](https://github.com/WordPress/ai/pull/1025) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Updates a post by ID; fields left out keep their current values. |
 | `core/content-delete` | stable | content | Port of the content delete ability from [WordPress/ai PR #1025](https://github.com/WordPress/ai/pull/1025) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Trashes a post by ID, or deletes it permanently with `force`. |
+| `wp/media-query` | experimental | media | Port of the read-only media query ability from [WordPress/ai PR #1098](https://github.com/WordPress/ai/pull/1098) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Reads media library items — a single item by ID, or a paginated filtered collection (`media`/`total`/`total_pages`) with totals; `fields` picks a subset, and raw fields require edit access. Uses the package-authored `media` category (core has no equivalent to copy). |
 
 ## Roadmap (not yet)
 
 Planned, **not** available in the current package: the MCP adapter consuming
-this package via `Registrar::register_all()`; further write abilities
-beyond the content trio; the WordPress AI plugin migration; Packagist
-publishing.
+this package via `Registrar::register_all()`; further write abilities beyond
+the content trio; the WordPress AI plugin migration; Packagist publishing.
+
+Media read is no longer roadmanted — `wp/media-query` ships in this package
+(the first experimental-tier `wp/` ability). Future media abilities, such as
+media writes, incubate under `wp/` the same way before ever carrying a `core/`
+proposal.
 
 ## Development
 
