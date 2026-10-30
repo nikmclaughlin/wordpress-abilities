@@ -115,6 +115,9 @@ final class Term_Delete extends Abstract_Term_Write {
 				'open_world'  => false,
 			),
 			'show_in_rest' => true,
+			'mcp'          => array(
+				'public' => true,
+			),
 		);
 	}
 }

@@ -119,6 +119,9 @@ final class Media_Upload extends Abstract_Media_Write {
 				'open_world'  => true,
 			),
 			'show_in_rest' => true,
+			'mcp'          => array(
+				'public' => true,
+			),
 		);
 	}
 }

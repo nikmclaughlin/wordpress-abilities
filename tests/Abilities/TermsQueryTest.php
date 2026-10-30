@@ -373,6 +373,12 @@ final class TermsQueryTest extends TestCase {
 		self::assertSame( 'content', $ability->get_category(), 'The ability should use the content category.' );
 		self::assertTrue( (bool) ( $meta['show_in_rest'] ?? false ), 'The ability should be exposed in REST.' );
 		self::assertSame(
+			array( 'public' => true ),
+			$meta['mcp'] ?? null,
+			'The mcp meta opts the ability in for MCP-tool exposure; the high-level public meta is unchanged.'
+		);
+		self::assertFalse( $ability->get_meta_item( 'public', false ), 'The high-level public meta is unchanged.' );
+		self::assertSame(
 			array(
 				'readonly'    => true,
 				'destructive' => false,

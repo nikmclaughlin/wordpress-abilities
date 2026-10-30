@@ -244,6 +244,12 @@ final class MediaDeleteTest extends TestCase {
 		self::assertSame( 'Media Delete', $ability->get_label(), 'The ability should use the PR\'s label.' );
 		self::assertSame( 'media', $ability->get_category(), 'The ability should use the package-authored media category.' );
 		self::assertTrue( (bool) ( $meta['show_in_rest'] ?? false ), 'The ability should be exposed in REST.' );
+		self::assertSame(
+			array( 'public' => true ),
+			$meta['mcp'] ?? null,
+			'The mcp meta opts the ability in for MCP-tool exposure; the high-level public meta is unchanged.'
+		);
+		self::assertFalse( $ability->get_meta_item( 'public', false ), 'The high-level public meta is unchanged.' );
 
 		$annotations = $meta['annotations'] ?? array();
 		self::assertFalse( (bool) ( $annotations['readonly'] ?? true ), 'Deleting writes the library.' );
