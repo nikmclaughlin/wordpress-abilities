@@ -219,6 +219,53 @@ final class Manifest {
 				'renamed_from'   => null,
 				'proposal'       => 'https://github.com/WordPress/ai/pull/764',
 			),
+			/*
+			 * The user writes below are a faithful port of WordPress/ai PR #1105
+			 * (author @jorgefilipecosta) on the package's `core/users-query`
+			 * field projection (PR #3): written users are answered through the
+			 * same contract, in the edit context. The write helpers share that
+			 * projection by verbatim copy (the coreify round-trip gate keeps the
+			 * Users_Query backport byte-exact), with `format_user()` gaining the
+			 * write-side `$edit_context` parameter the PR's write path adds.
+			 *
+			 * Tier: experimental, incubating under the `wp/` prefix — the proposal
+			 * below is the PR's paper trail, but the abilities have NOT landed in
+			 * core (`core_since` stays null and flips when core lands them), so
+			 * their names and schemas carry no promises yet (NAME-LIFECYCLE.md).
+			 */
+			'wp/user-create'      => array(
+				'name'           => 'wp/user-create',
+				'class'          => Users\User_Create::class,
+				'category'       => 'user',
+				'tier'           => self::TIER_EXPERIMENTAL,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array(),
+				'renamed_from'   => null,
+				'proposal'       => 'https://github.com/WordPress/ai/pull/1105',
+			),
+			'wp/user-update'      => array(
+				'name'           => 'wp/user-update',
+				'class'          => Users\User_Update::class,
+				'category'       => 'user',
+				'tier'           => self::TIER_EXPERIMENTAL,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array(),
+				'renamed_from'   => null,
+				'proposal'       => 'https://github.com/WordPress/ai/pull/1105',
+			),
+			'wp/user-delete'      => array(
+				'name'           => 'wp/user-delete',
+				'class'          => Users\User_Delete::class,
+				'category'       => 'user',
+				'tier'           => self::TIER_EXPERIMENTAL,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array(),
+				'renamed_from'   => null,
+				'proposal'       => 'https://github.com/WordPress/ai/pull/1105',
+			),
 		);
 	}
 
