@@ -146,6 +146,25 @@ The entries below describe the current prototype state._
   polyfill marking the built-in `category` and `post_tag` on the cores that
   lack the flag — verified: all currently supported ones, 7.1 stable and
   7.2-beta3 included), served through the content category.
+- `wp/term-create` / `wp/term-update` / `wp/term-delete` — tier `experimental`
+  (incubating under the `wp/` prefix, no name or schema promises until they
+  file a core proposal): faithful ports of the term write abilities from
+  [WordPress/ai PR #1103](https://github.com/WordPress/ai/pull/1103) by
+  @jorgefilipecosta, building on the `wp/terms-query` field projection —
+  written terms are answered through the same contract, limited by `fields`
+  with the ID always included (and `parent` only for hierarchical
+  taxonomies). Create takes a taxonomy and a name, plus optional slug,
+  description, and parent (hierarchical only); update takes an id and the
+  values to change; delete takes an id and `force`, which must be true
+  because terms cannot be trashed, and returns `{ deleted, previous }`.
+  On update and delete, `taxonomy` is an optional guard, and a term outside
+  it is denied like a missing one. The floors mirror the term endpoints:
+  creating needs `edit_terms` in a hierarchical taxonomy or `assign_terms`
+  in a flat one (so a contributor can create tags but not categories),
+  updating needs `edit_term`, deleting needs `delete_term`; the default
+  category cannot be deleted (core's capability mapping denies the cap, and
+  `wp_delete_term()` refuses the term). Rides the same
+  `taxonomy_show_in_abilities` opt-in and content category as the query.
 ### Removed
 
 - `wp/post-create` — the self-authored experimental write-ability prototype
