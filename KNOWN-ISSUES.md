@@ -48,6 +48,28 @@ until core decides otherwise:
   - With raw fields requested, a collection is answered in the edit context:
     items the caller cannot edit are withheld from the list but still counted
     in the totals.
+- `wp/settings-update` (WordPress/ai PR #764):
+  - All-or-nothing by design (`settings_invalid_param` 400 →
+    `settings_cannot_manage_privacy_options` 403 →
+    `settings_invalid_stored_value` 500 → writes): an error leaves every
+    setting unchanged, where the settings endpoint keeps the settings it
+    already wrote. The PR discussion established the stricter behavior.
+  - `url` and `email` are read-only (a wrong `siteurl` makes wp-admin
+    unreachable; `admin_email` needs its confirmation step): the input schema
+    refuses them, and they live in one `READ_ONLY_OPTIONS` list.
+  - `null` resets a setting to its registered default and stores it, where the
+    settings endpoint only deletes the stored value; a boolean stored as `''`
+    (WordPress's false) resets via `null` where the endpoint refuses it; a
+    `null` for a setting without a registered default is rejected with
+    `settings_invalid_param` (the endpoint deletes the value).
+  - A sanitize-then-refuse: a value sanitizing makes schema-invalid is refused
+    with `settings_invalid_param` where the endpoint stores it (e.g. an
+    `email`-format value `%ab@x.co` stored as `@x.co`).
+  - A privacy policy page change from a user who cannot manage privacy
+    options is refused with `settings_cannot_manage_privacy_options`; the
+    settings endpoint skips the setting without an error.
+  - `settings-update` is not registered when every exposed setting is
+    read-only (multisite), where the endpoint always exists.
 - `wp/media-upload` / `wp/media-update` / `wp/media-delete` (WordPress/ai PR #1104):
   - Trashing an attachment requires the site to enable the media trash
     (`MEDIA_TRASH`): without it, a non-forced delete answers

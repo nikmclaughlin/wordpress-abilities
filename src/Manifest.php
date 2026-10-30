@@ -194,6 +194,31 @@ final class Manifest {
 				'renamed_from'   => null,
 				'proposal'       => 'https://github.com/WordPress/ai/pull/1104',
 			),
+			/*
+			 * The settings update below is a faithful port of WordPress/ai PR #764
+			 * (author @jorgefilipecosta) on this package's `core/settings-get`
+			 * backport (PR #2): the write ability extends `Settings_Get` and
+			 * reuses the exposed-settings snapshot and the read-back helper. Its
+			 * PR-side `core/settings-get` companion changes (endpoint setting
+			 * names, per-setting stored-value sanitizing/omission) are already
+			 * in the PR #2 backport; nothing was ported for them.
+			 *
+			 * Tier: experimental, incubating under the `wp/` prefix — the proposal
+			 * below is the PR's paper trail, but the ability has NOT landed in
+			 * core (`core_since` stays null and flips when core lands it), so its
+			 * name and schema carry no promises yet (NAME-LIFECYCLE.md).
+			 */
+			'wp/settings-update'  => array(
+				'name'           => 'wp/settings-update',
+				'class'          => Settings\Settings_Update::class,
+				'category'       => 'site',
+				'tier'           => self::TIER_EXPERIMENTAL,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array(),
+				'renamed_from'   => null,
+				'proposal'       => 'https://github.com/WordPress/ai/pull/764',
+			),
 		);
 	}
 

@@ -94,6 +94,7 @@ Full rules, the promotion path, and the rename protocol are in
 | `wp/media-upload` | experimental | media | Port of the media upload ability from [WordPress/ai PR #1104](https://github.com/WordPress/ai/pull/1104) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Uploads a file from base64 `data` + `filename` (with attachment fields), or downloads an image from a `url` (parent post only). Returns the new item in the edit context; `fields` picks a subset. Requires `upload_files`; the parent and author are named-field checks. A URL upload downloads from another site (`open_world: true`), capped at the site's upload size. Uses the package-authored `media` category. |
 | `wp/media-update` | experimental | media | Port of the media update ability from [WordPress/ai PR #1104](https://github.com/WordPress/ai/pull/1104) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Updates a media item by ID with the same attachment fields (the status is validated against the attachment, so `inherit` can be kept); fields left out keep their values. Returns the updated item in the edit context. Requires edit access to the item (`edit_post` for attachments, via the same projection `wp/media-query` reads with). |
 | `wp/media-delete` | experimental | media | Port of the media delete ability from [WordPress/ai PR #1104](https://github.com/WordPress/ai/pull/1104) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Trashes a media item by ID (an error unless the site enables media trash), or deletes it and its files permanently with `force`, returning the item under `previous`. Requires `delete_post` for attachments; the capability is re-checked just before removal. |
+| `wp/settings-update` | experimental | site | Port of the settings update ability from [WordPress/ai PR #764](https://github.com/WordPress/ai/pull/764) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Updates only the settings `core/settings-get` reads — every setting except `url` and `email` (read-only, and unregistered by the ability when all of them are read-only) — via a map of setting name to new value; `null` resets a setting with a registered default to it (a setting without one refuses `null`); every check (sanitize, privacy policy, stored value) runs before any write, so an error leaves every setting unchanged; the answer holds only the updated settings. Requires `manage_options`; the privacy policy page additionally requires `manage_privacy_options`. |
 
 ## Roadmap (not yet)
 
@@ -101,8 +102,10 @@ Planned, **not** available in the current package: the MCP adapter consuming
 this package via `Registrar::register_all()`; further write abilities beyond
 the content trio; the WordPress AI plugin migration; Packagist publishing.
 
-Media read is no longer roadmanted — `wp/media-query` ships in this package
-(the first experimental-tier `wp/` ability). Media writes are no longer
+Settings writes are no longer roadmanted either: `wp/settings-update` ships
+(extended from the `core/settings-get` backport's shared exposed-settings
+snapshot). Media read is no longer roadmanted — `wp/media-query` ships in this
+package (the first experimental-tier `wp/` ability). Media writes are no longer
 roadmanted either: `wp/media-upload`, `wp/media-update`, and `wp/media-delete`
 ship on top of the same `media` category and field projection. Further media
 or write abilities incubate under `wp/` the same way before ever carrying a

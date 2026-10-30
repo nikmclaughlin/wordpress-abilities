@@ -95,6 +95,20 @@ The entries below describe the current prototype state._
   item stays gated while its rendered description is not. Ships with the
   package-authored `media` ability category (core trunk has no media category
   to copy).
+- `wp/settings-update` (WordPress/ai PR #764): tier `experimental` — writes
+  the settings `core/settings-get` reads (except the read-only `url` and
+  `email`) from a map of setting name to new value; `null` resets a setting
+  with a registered default to that default; all-or-nothing validation runs
+  sanitize → privacy → stored-value checks before any write, so an error
+  leaves every setting unchanged (**intentionally stricter than the settings
+  endpoint**, which writes what it can); the answer holds only the updated
+  settings, as `core/settings-get` reads them. Requires `manage_options`; the
+  privacy policy page additionally requires `manage_privacy_options`. Not
+  registered when every exposed setting is read-only. Extends the PR #2
+  `Settings_Get` port's shared exposed-settings snapshot (the upstream keeps
+  both abilities in one class); its companion `core/settings-get` changes
+  (endpoint names, stored-value sanitizing/omission) were already in the PR #2
+  backport.
 - `wp/media-upload` / `wp/media-update` / `wp/media-delete` — tier
   `experimental` (incubating under the `wp/` prefix, no name or schema
   promises until they file a core proposal): faithful ports of the media
