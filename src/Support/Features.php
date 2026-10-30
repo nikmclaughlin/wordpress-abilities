@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 
 namespace WordPress\Abilities\Support;
 
-
 /**
  * Detection map for core support-surface features that abilities may require.
  *
@@ -26,8 +25,9 @@ final class Features {
 	 * @var array<string, string>
 	 */
 	private static $polyfills = array(
-		'show_in_abilities'         => 'polyfills/show-in-abilities.php',
-		'setting_show_in_abilities' => 'polyfills/setting-show-in-abilities.php',
+		'show_in_abilities'          => 'polyfills/show-in-abilities.php',
+		'setting_show_in_abilities'  => 'polyfills/setting-show-in-abilities.php',
+		'taxonomy_show_in_abilities' => 'polyfills/taxonomy-show-in-abilities.php',
 	);
 
 	/**
@@ -55,6 +55,10 @@ final class Features {
 
 		if ( 'setting_show_in_abilities' === $feature ) {
 			return self::is_setting_show_in_abilities_available();
+		}
+
+		if ( 'taxonomy_show_in_abilities' === $feature ) {
+			return self::is_taxonomy_show_in_abilities_available();
 		}
 
 		return false;
@@ -115,5 +119,22 @@ final class Features {
 		}
 
 		return isset( self::$loaded['setting_show_in_abilities'] );
+	}
+
+	/**
+	 * Detects the `show_in_abilities` taxonomy registration argument.
+	 *
+	 * Natively declared on WP_Taxonomy since 7.2. On 6.9-7.1 the argument
+	 * does not exist, and it is only available once the package polyfill
+	 * has been loaded, mirroring the polyfill-backed registration path.
+	 *
+	 * @return bool
+	 */
+	private static function is_taxonomy_show_in_abilities_available(): bool {
+		if ( class_exists( 'WP_Taxonomy', false ) && property_exists( 'WP_Taxonomy', 'show_in_abilities' ) ) {
+			return true;
+		}
+
+		return isset( self::$loaded['taxonomy_show_in_abilities'] );
 	}
 }

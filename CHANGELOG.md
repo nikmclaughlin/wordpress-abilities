@@ -127,6 +127,25 @@ The entries below describe the current prototype state._
   error can name the refused field, and the delete capability is re-checked
   right before removal. Ships with the package-authored `media` ability
   category (core trunk has no media category to copy).
+- `wp/terms-query` — tier `experimental` (incubating under the `wp/` prefix,
+  no name or schema promises until it files a core proposal): faithful port
+  of the read-only terms query ability from
+  [WordPress/ai PR #1099](https://github.com/WordPress/ai/pull/1099) by
+  @jorgefilipecosta. Reads the terms of taxonomies exposed to abilities — a
+  single term by ID (optionally guarded by `taxonomy`) or by `taxonomy` +
+  `slug`, or a paginated collection (`terms`/`total`/`total_pages`) filtered
+  by search, include, exclude, hierarchical parent, post, and emptiness;
+  `fields` selects the returned subset (always with the ID) with a lean
+  default set that omits the description and link, and `parent` only for
+  hierarchical taxonomies. Keeps the PR's documented term-endpoint quirks: a
+  missing, hidden, or taxonomy-mismatched term is denied like an unreadable
+  one (so terms cannot be probed), and the `post` filter's specific errors
+  come from the execute callback while the permission callback stays generic.
+  The taxonomies are exposed through the `show_in_abilities` opt-in — the
+  new `taxonomy_show_in_abilities` support feature (native detection, with a
+  polyfill marking the built-in `category` and `post_tag` on the cores that
+  lack the flag — verified: all currently supported ones, 7.1 stable and
+  7.2-beta3 included), served through the content category.
 ### Removed
 
 - `wp/post-create` — the self-authored experimental write-ability prototype

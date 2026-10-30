@@ -266,6 +266,29 @@ final class Manifest {
 				'renamed_from'   => null,
 				'proposal'       => 'https://github.com/WordPress/ai/pull/1105',
 			),
+			/*
+			 * The terms query below is a faithful port of WordPress/ai PR #1099
+			 * (author @jorgefilipecosta).
+			 *
+			 * Tier: experimental, incubating under the `wp/` prefix — the proposal
+			 * below is the PR's paper trail, but the ability has NOT landed in
+			 * core (`core_since` stays null and flips when core lands it), so its
+			 * name and schema carry no promises yet (NAME-LIFECYCLE.md). Its
+			 * `content` category is core-registered (the package declares it on
+			 * pre-7.2 hosts), and the taxonomy opt-in `show_in_abilities` is
+			 * native on 7.2+ and polyfilled on 6.9-7.1.
+			 */
+			'wp/terms-query'      => array(
+				'name'           => 'wp/terms-query',
+				'class'          => Terms\Terms_Query::class,
+				'category'       => 'content',
+				'tier'           => self::TIER_EXPERIMENTAL,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array( 'taxonomy_show_in_abilities' ),
+				'renamed_from'   => null,
+				'proposal'       => 'https://github.com/WordPress/ai/pull/1099',
+			),
 		);
 	}
 
