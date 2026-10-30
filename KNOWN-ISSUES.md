@@ -70,6 +70,31 @@ until core decides otherwise:
     settings endpoint skips the setting without an error.
   - `settings-update` is not registered when every exposed setting is
     read-only (multisite), where the endpoint always exists.
+- `wp/terms-query` (WordPress/ai PR #1099):
+  - A missing, hidden, or taxonomy-mismatched term is denied like an unreadable
+    one — a generic permission denial (no 404 vs 403 distinction), so terms
+    cannot be probed through the ability. A direct (unvalidated) call reports
+    it as `terms_term_invalid` instead.
+  - The `post` filter's failures are specific only through the execute
+    callback (`terms_post_invalid_id` 400 / `terms_forbidden_context` 403);
+    the permission callback stays generic and lets them through for a
+    logged-in user whose taxonomy access passed, as the PR documents (the
+    Abilities API replaces permission errors with a generic one).
+  - The REST term search covers names and slugs, not descriptions; the
+    `description` field is the stored HTML, and `link` is the term archive
+    permalink — taken from `get_term_link()`, whose possible WP_Error is
+    assigned unchecked (as in the source PR), so a broken site link filter
+    would surface it in the `link` field.
+  - With `hide_empty`, empty parents of non-empty children appear in `terms`
+    but not in `total` (the term query's count leaves them out), as the PR's
+    output schema documents.
+  - The taxonomy `show_in_abilities` flag is absent from every currently
+    supported core (verified on 7.2-beta3 and 7.1: `WP_Taxonomy` does not
+    declare it, and core does not flag `category`/`post_tag`), so the
+    `taxonomy_show_in_abilities` polyfill marks them on both environment
+    branches of the matrix; a custom taxonomy's non-bool opt-in value (e.g.
+    `'yes'`) is not normalized to a bool, which the loose object-list match
+    and the ability's truthiness check read exactly like 7.2's bool cast.
 - `wp/media-upload` / `wp/media-update` / `wp/media-delete` (WordPress/ai PR #1104):
   - Trashing an attachment requires the site to enable the media trash
     (`MEDIA_TRASH`): without it, a non-forced delete answers

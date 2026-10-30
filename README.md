@@ -95,6 +95,7 @@ Full rules, the promotion path, and the rename protocol are in
 | `wp/media-update` | experimental | media | Port of the media update ability from [WordPress/ai PR #1104](https://github.com/WordPress/ai/pull/1104) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Updates a media item by ID with the same attachment fields (the status is validated against the attachment, so `inherit` can be kept); fields left out keep their values. Returns the updated item in the edit context. Requires edit access to the item (`edit_post` for attachments, via the same projection `wp/media-query` reads with). |
 | `wp/media-delete` | experimental | media | Port of the media delete ability from [WordPress/ai PR #1104](https://github.com/WordPress/ai/pull/1104) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Trashes a media item by ID (an error unless the site enables media trash), or deletes it and its files permanently with `force`, returning the item under `previous`. Requires `delete_post` for attachments; the capability is re-checked just before removal. |
 | `wp/settings-update` | experimental | site | Port of the settings update ability from [WordPress/ai PR #764](https://github.com/WordPress/ai/pull/764) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Updates only the settings `core/settings-get` reads — every setting except `url` and `email` (read-only, and unregistered by the ability when all of them are read-only) — via a map of setting name to new value; `null` resets a setting with a registered default to it (a setting without one refuses `null`); every check (sanitize, privacy policy, stored value) runs before any write, so an error leaves every setting unchanged; the answer holds only the updated settings. Requires `manage_options`; the privacy policy page additionally requires `manage_privacy_options`. |
+| `wp/terms-query` | experimental | content | Port of the read-only terms query ability from [WordPress/ai PR #1099](https://github.com/WordPress/ai/pull/1099) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Reads terms of the taxonomies exposed to abilities via `show_in_abilities` (polyfilled: no currently supported core declares the taxonomy flag yet) — a single term by ID (optionally guarded by `taxonomy`) or by `taxonomy` + `slug`, or a paginated filtered collection (`terms`/`total`/`total_pages`) covering search, include, exclude, hierarchical `parent`, `post`, and `hide_empty`; `fields` picks a subset (the ID always included, `parent` for hierarchical taxonomies only). Requires an authenticated user; a missing or hidden term is denied like an unreadable one. Served through the GET run route, like the other read abilities. |
 
 ## Roadmap (not yet)
 
@@ -107,9 +108,11 @@ Settings writes are no longer roadmanted either: `wp/settings-update` ships
 snapshot). Media read is no longer roadmanted — `wp/media-query` ships in this
 package (the first experimental-tier `wp/` ability). Media writes are no longer
 roadmanted either: `wp/media-upload`, `wp/media-update`, and `wp/media-delete`
-ship on top of the same `media` category and field projection. Further media
-or write abilities incubate under `wp/` the same way before ever carrying a
-`core/` proposal.
+ship on top of the same `media` category and field projection. Terms read is no
+longer roadmanted either: `wp/terms-query` ships (the taxonomy opt-in flag is
+the `taxonomy_show_in_abilities` support feature, polyfilled). Further media,
+terms, or write abilities incubate under `wp/` the same way before ever
+carrying a `core/` proposal.
 
 ## Development
 
