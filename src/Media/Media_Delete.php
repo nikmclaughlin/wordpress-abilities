@@ -114,6 +114,9 @@ final class Media_Delete extends Abstract_Media_Write {
 				'open_world'  => false,
 			),
 			'show_in_rest' => true,
+			'mcp'          => array(
+				'public' => true,
+			),
 		);
 	}
 }

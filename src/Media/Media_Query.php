@@ -182,6 +182,9 @@ final class Media_Query extends Abstract_Core_Ability {
 				'open_world'  => false,
 			),
 			'show_in_rest' => true,
+			'mcp'          => array(
+				'public' => true,
+			),
 		);
 	}
 

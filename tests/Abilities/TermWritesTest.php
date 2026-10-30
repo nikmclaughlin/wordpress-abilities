@@ -403,6 +403,8 @@ final class TermWritesTest extends TestCase {
 		foreach ( array( $create, $update, $delete ) as $ability ) {
 			self::assertSame( 'content', $ability->get_category(), 'The write abilities share the query\'s content category.' );
 			self::assertTrue( $ability->get_meta_item( 'show_in_rest', false ), 'The write abilities should be exposed in REST.' );
+			self::assertSame( array( 'public' => true ), $ability->get_meta_item( 'mcp', array() ), 'The mcp meta opts the write abilities in for MCP-tool exposure.' );
+			self::assertFalse( $ability->get_meta_item( 'public', false ), 'The write abilities\' high-level public meta is unchanged.' );
 		}
 
 		$create_annotations = $create->get_meta_item( 'annotations', array() );

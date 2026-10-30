@@ -116,6 +116,9 @@ final class Term_Create extends Abstract_Term_Write {
 				'open_world'  => false,
 			),
 			'show_in_rest' => true,
+			'mcp'          => array(
+				'public' => true,
+			),
 		);
 	}
 }
