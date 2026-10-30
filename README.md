@@ -91,6 +91,9 @@ Full rules, the promotion path, and the rename protocol are in
 | `core/content-update` | stable | content | Port of the content update ability from [WordPress/ai PR #1025](https://github.com/WordPress/ai/pull/1025) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Updates a post by ID; fields left out keep their current values. |
 | `core/content-delete` | stable | content | Port of the content delete ability from [WordPress/ai PR #1025](https://github.com/WordPress/ai/pull/1025) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Trashes a post by ID, or deletes it permanently with `force`. |
 | `wp/media-query` | experimental | media | Port of the read-only media query ability from [WordPress/ai PR #1098](https://github.com/WordPress/ai/pull/1098) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Reads media library items — a single item by ID, or a paginated filtered collection (`media`/`total`/`total_pages`) with totals; `fields` picks a subset, and raw fields require edit access. Uses the package-authored `media` category (core has no equivalent to copy). |
+| `wp/media-upload` | experimental | media | Port of the media upload ability from [WordPress/ai PR #1104](https://github.com/WordPress/ai/pull/1104) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Uploads a file from base64 `data` + `filename` (with attachment fields), or downloads an image from a `url` (parent post only). Returns the new item in the edit context; `fields` picks a subset. Requires `upload_files`; the parent and author are named-field checks. A URL upload downloads from another site (`open_world: true`), capped at the site's upload size. Uses the package-authored `media` category. |
+| `wp/media-update` | experimental | media | Port of the media update ability from [WordPress/ai PR #1104](https://github.com/WordPress/ai/pull/1104) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Updates a media item by ID with the same attachment fields (the status is validated against the attachment, so `inherit` can be kept); fields left out keep their values. Returns the updated item in the edit context. Requires edit access to the item (`edit_post` for attachments, via the same projection `wp/media-query` reads with). |
+| `wp/media-delete` | experimental | media | Port of the media delete ability from [WordPress/ai PR #1104](https://github.com/WordPress/ai/pull/1104) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Trashes a media item by ID (an error unless the site enables media trash), or deletes it and its files permanently with `force`, returning the item under `previous`. Requires `delete_post` for attachments; the capability is re-checked just before removal. |
 
 ## Roadmap (not yet)
 
@@ -99,9 +102,11 @@ this package via `Registrar::register_all()`; further write abilities beyond
 the content trio; the WordPress AI plugin migration; Packagist publishing.
 
 Media read is no longer roadmanted — `wp/media-query` ships in this package
-(the first experimental-tier `wp/` ability). Future media abilities, such as
-media writes, incubate under `wp/` the same way before ever carrying a `core/`
-proposal.
+(the first experimental-tier `wp/` ability). Media writes are no longer
+roadmanted either: `wp/media-upload`, `wp/media-update`, and `wp/media-delete`
+ship on top of the same `media` category and field projection. Further media
+or write abilities incubate under `wp/` the same way before ever carrying a
+`core/` proposal.
 
 ## Development
 
