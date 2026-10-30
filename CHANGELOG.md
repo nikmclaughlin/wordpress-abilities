@@ -95,6 +95,24 @@ The entries below describe the current prototype state._
   item stays gated while its rendered description is not. Ships with the
   package-authored `media` ability category (core trunk has no media category
   to copy).
+- `wp/media-upload` / `wp/media-update` / `wp/media-delete` — tier
+  `experimental` (incubating under the `wp/` prefix, no name or schema
+  promises until they file a core proposal): faithful ports of the media
+  write abilities from [WordPress/ai PR #1104](https://github.com/WordPress/ai/pull/1104)
+  by @jorgefilipecosta, building on the `wp/media-query` field projection —
+  written attachments are answered through the same contract, in the edit
+  context. Upload takes a file as base64 `data` with a `filename` (plus
+  title, caption, description, alt text, parent post, author, status, slug,
+  and date) or the `url` of a publicly reachable image (parent post only,
+  `open_world: true`, download capped at the site's upload size); update
+  takes an `id` and the same fields (the status is validated against the
+  attachment, so `inherit` can be kept); delete trashes an `id` — an error
+  unless the site enables media trash (`MEDIA_TRASH`) — or deletes it and
+  its files permanently with `force`, returning the item under `previous`.
+  Every write re-checks its capability inside the execute callback so the
+  error can name the refused field, and the delete capability is re-checked
+  right before removal. Ships with the package-authored `media` ability
+  category (core trunk has no media category to copy).
 ### Removed
 
 - `wp/post-create` — the self-authored experimental write-ability prototype

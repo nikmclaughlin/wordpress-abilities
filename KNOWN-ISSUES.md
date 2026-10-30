@@ -48,3 +48,25 @@ until core decides otherwise:
   - With raw fields requested, a collection is answered in the edit context:
     items the caller cannot edit are withheld from the list but still counted
     in the totals.
+- `wp/media-upload` / `wp/media-update` / `wp/media-delete` (WordPress/ai PR #1104):
+  - Trashing an attachment requires the site to enable the media trash
+    (`MEDIA_TRASH`): without it, a non-forced delete answers
+    `media_trash_not_supported` (501), and `force` string values coerce like
+    booleans (`"false"` does not delete).
+  - An explicit `publish` status on an attachment is stored as `inherit`, as
+    attachments are stored; a new `inherit` status is rejected
+    (`media_invalid_param`) while keeping the current one is allowed.
+  - A URL upload downloads from another site (`open_world: true`), derives the
+    file name and type from the URL path, requires the `upload_files`
+    capability separately from the create permission, and caps the download at
+    `wp_max_upload_size()` so no uncapped server-side fetch can happen.
+  - A non-string image-meta value (EXIF/iptc data is filterable) triggers the
+    PR's own `(string)` cast warning and is ignored: the title falls back to
+    the file name (verified identical on trunk and stable).
+  - `media-update` re-checks the refuse-able fields (status, author, parent
+    type) inside the execute callback so the error can name the refused field,
+    and does not re-check the new parent post's edit capability
+    (`media_invalid_param` covers revision/attachment parents only).
+  - The delete capability is re-checked right before anything is removed, so
+    a hook refusal surfaces as `media_cannot_delete` (500) on the
+    `pre_delete_attachment` veto.

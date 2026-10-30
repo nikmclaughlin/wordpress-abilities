@@ -148,6 +148,52 @@ final class Manifest {
 				'renamed_from'   => null,
 				'proposal'       => 'https://github.com/WordPress/ai/pull/1098',
 			),
+			/*
+			 * The media writes below are a faithful port of WordPress/ai PR #1104
+			 * (author @jorgefilipecosta) on top of the `wp/media-query` field
+			 * projection: the abilities write attachments and answer with them
+			 * through the query's contract, in the edit context.
+			 *
+			 * Tier: experimental, incubating under the `wp/` prefix — the proposal
+			 * below is the PR's paper trail, but the abilities have NOT landed in
+			 * core (`core_since` stays null and flips when core lands them), so
+			 * their names and schemas carry no promises yet (NAME-LIFECYCLE.md).
+			 * They use the package-authored `media` ability category (see
+			 * Categories).
+			 */
+			'wp/media-upload'     => array(
+				'name'           => 'wp/media-upload',
+				'class'          => Media\Media_Upload::class,
+				'category'       => 'media',
+				'tier'           => self::TIER_EXPERIMENTAL,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array(),
+				'renamed_from'   => null,
+				'proposal'       => 'https://github.com/WordPress/ai/pull/1104',
+			),
+			'wp/media-update'     => array(
+				'name'           => 'wp/media-update',
+				'class'          => Media\Media_Update::class,
+				'category'       => 'media',
+				'tier'           => self::TIER_EXPERIMENTAL,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array(),
+				'renamed_from'   => null,
+				'proposal'       => 'https://github.com/WordPress/ai/pull/1104',
+			),
+			'wp/media-delete'     => array(
+				'name'           => 'wp/media-delete',
+				'class'          => Media\Media_Delete::class,
+				'category'       => 'media',
+				'tier'           => self::TIER_EXPERIMENTAL,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array(),
+				'renamed_from'   => null,
+				'proposal'       => 'https://github.com/WordPress/ai/pull/1104',
+			),
 		);
 	}
 
