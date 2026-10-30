@@ -289,6 +289,62 @@ final class Manifest {
 				'renamed_from'   => null,
 				'proposal'       => 'https://github.com/WordPress/ai/pull/1099',
 			),
+			/*
+			 * The term writes below are a faithful port of WordPress/ai PR #1103
+			 * (author @jorgefilipecosta) on top of the `wp/terms-query` field
+			 * projection (PR #10): the abilities write terms of the same exposed
+			 * taxonomies and answer with them through the same contract, limited
+			 * by `fields`; a delete returns the deleted term under `previous`,
+			 * and a delete only runs with `force` because terms cannot be trashed.
+			 * The `taxonomy` input is an optional guard on update and delete, and
+			 * the default category is not protected by any code of its own: core's
+			 * capability mapping denies `delete_term` against the term named by
+			 * the `default_{$taxonomy}` option, and `wp_delete_term()` refuses it.
+			 * The write helpers share the projection by verbatim copy (the
+			 * media-write sharing pattern, as Terms_Query is a hand-authored wp/*
+			 * class), with `private` relaxed to `protected` at the copy site.
+			 *
+			 * Tier: experimental, incubating under the `wp/` prefix — the proposal
+			 * below is the PR's paper trail, but the abilities have NOT landed in
+			 * core (`core_since` stays null and flips when core lands them), so
+			 * their names and schemas carry no promises yet (NAME-LIFECYCLE.md).
+			 * Their `content` category is core-registered (the package declares
+			 * it on pre-7.2 hosts), and the taxonomy opt-in they ride is the
+			 * `taxonomy_show_in_abilities` support feature, as for the query.
+			 */
+			'wp/term-create'      => array(
+				'name'           => 'wp/term-create',
+				'class'          => Terms\Term_Create::class,
+				'category'       => 'content',
+				'tier'           => self::TIER_EXPERIMENTAL,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array( 'taxonomy_show_in_abilities' ),
+				'renamed_from'   => null,
+				'proposal'       => 'https://github.com/WordPress/ai/pull/1103',
+			),
+			'wp/term-update'      => array(
+				'name'           => 'wp/term-update',
+				'class'          => Terms\Term_Update::class,
+				'category'       => 'content',
+				'tier'           => self::TIER_EXPERIMENTAL,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array( 'taxonomy_show_in_abilities' ),
+				'renamed_from'   => null,
+				'proposal'       => 'https://github.com/WordPress/ai/pull/1103',
+			),
+			'wp/term-delete'      => array(
+				'name'           => 'wp/term-delete',
+				'class'          => Terms\Term_Delete::class,
+				'category'       => 'content',
+				'tier'           => self::TIER_EXPERIMENTAL,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array( 'taxonomy_show_in_abilities' ),
+				'renamed_from'   => null,
+				'proposal'       => 'https://github.com/WordPress/ai/pull/1103',
+			),
 		);
 	}
 

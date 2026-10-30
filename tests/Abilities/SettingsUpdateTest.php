@@ -7,7 +7,13 @@
  * (6.9/7.1). The ability registers on both (core 7.2 has `core/settings-get`
  * but no `core/settings-update`, so the package copy is the registrant); the
  * execute tests build fresh package instances, so the package code runs on
- * both environments. The suite pins the ported settings-endpoint update
+ * both environments. The unique-after-cast list rows are the one
+ * host-dependent behavior: with the framework's input-coercion layer (core
+ * r65044, #66383, 7.2) the colliding fixture is refused with
+ * `ability_invalid_input` before the execute callback, where hosts without
+ * it reach the plugin's sanitize re-validation and its
+ * `settings_invalid_param` mapping (pinned directly on the plugin path
+ * too). The suite pins the ported settings-endpoint update
  * behaviors — the updated-only output, the null-reset semantics, the
  * all-or-nothing validation order (sanitize → privacy → stored value before
  * any write), the `url`/`email`/unknown/empty rejections, and the
@@ -195,6 +201,30 @@ final class SettingsUpdateTest extends TestCase {
 		$this->post_ids[] = $id;
 
 		return $id;
+	}
+
+	/**
+	 * Registers the list fixture shared by the unique-list rows: an array of
+	 * integers with `uniqueItems`, so numeric-string items either collide
+	 * after the cast ('1' and '01' both cast to 1) or cast to distinct
+	 * values ('1' and '02' cast to 1 and 2). The caller unregisters (and
+	 * deletes the option) in a finally, as the other fixture registrations do.
+	 */
+	private function register_unique_list_setting(): void {
+		register_setting(
+			'validation',
+			'su_list_setting',
+			array(
+				'show_in_abilities' => array(
+					'name'   => 'su_list_setting',
+					'schema' => array(
+						'items'       => array( 'type' => 'integer' ),
+						'uniqueItems' => true,
+					),
+				),
+				'type'              => 'array',
+			)
+		);
 	}
 
 	/**
@@ -460,31 +490,20 @@ final class SettingsUpdateTest extends TestCase {
 	}
 
 	/**
-	 * A value that sanitizing makes schema-invalid is refused with
-	 * `settings_invalid_param` (where the settings endpoint stores it), and the
-	 * all-or-nothing order keeps the other settings in the input unwritten.
+	 * A list unique only before coercion (unique as strings, colliding after
+	 * the cast to integers) is refused before anything is written. With the
+	 * framework's input-coercion layer (core r65044, #66383: coercion runs
+	 * after validation, before the permission check and execute callback —
+	 * the exact fixture core's own `data_input_coercion_errors` pins), the
+	 * observable is `ability_invalid_input`; on hosts without the layer the
+	 * callback runs and the plugin's own mapping refuses with
+	 * `settings_invalid_param`.
 	 */
 	public function test_a_value_sanitizing_makes_invalid_is_refused(): void {
 		$this->log_in_as( 'administrator' );
 		update_option( 'blogname', 'Original Name' );
 
-		register_setting(
-			'validation',
-			'su_list_setting',
-			array(
-				// Unique as strings, so the list validates, but both items sanitize to 1:
-				// the sanitized value fails re-validation, which the ability refuses
-				// where the settings endpoint stores what sanitizing produced.
-				'show_in_abilities' => array(
-					'name'   => 'su_list_setting',
-					'schema' => array(
-						'items'       => array( 'type' => 'integer' ),
-						'uniqueItems' => true,
-					),
-				),
-				'type'              => 'array',
-			)
-		);
+		$this->register_unique_list_setting();
 
 		try {
 			$result = $this->update(
@@ -493,6 +512,85 @@ final class SettingsUpdateTest extends TestCase {
 					'su_list_setting' => array( '1', '01' ),
 				)
 			);
+
+			if ( method_exists( 'WP_Ability', 'coerce_input' ) ) {
+				// The coercion layer refuses the input before the execute callback
+				// runs: the observable is ability_invalid_input (no status data), the
+				// same schema-level shape as the other input-rejection rows. A plugin
+				// refusal would carry the params/status data the mapping row below
+				// pins, and the plugin never returns this code.
+				$this->assert_error_response( 'ability_invalid_input', $result, null, 'A value unique only before coercion should be refused.' );
+				self::assertNull( $result->get_error_data(), 'The framework refusal should carry no error data: the plugin callback never ran.' );
+			} else {
+				// Pre-coercion hosts (7.1 and older) reach the execute callback; the
+				// plugin's own sanitize/re-validation refuses with the mapping.
+				$this->assert_error_response( 'settings_invalid_param', $result, 400, 'A value that sanitizing makes invalid should be refused.' );
+				self::assertSame( array( 'su_list_setting' ), array_keys( $result->get_error_data()['params'] ?? array() ), 'The refused field should be named.' );
+			}
+
+			self::assertSame( 'Original Name', get_option( 'blogname' ), 'The refusal should leave the other settings unwritten.' );
+			self::assertFalse( get_option( 'su_list_setting' ), 'Nothing should be stored.' );
+		} finally {
+			unregister_setting( 'validation', 'su_list_setting' );
+			delete_option( 'su_list_setting' );
+		}
+	}
+
+	/**
+	 * A list unique after coercion still updates through the execute
+	 * callback: items casting to distinct integers ('1' and '02') pass both
+	 * validation and the coercion layer where present, and the coerced list
+	 * is what the answer carries and what gets stored.
+	 */
+	public function test_a_list_unique_after_coercion_still_updates(): void {
+		$this->log_in_as( 'administrator' );
+
+		$this->register_unique_list_setting();
+
+		try {
+			$updated = $this->update(
+				array(
+					'title'           => 'Validated List Site',
+					'su_list_setting' => array( '1', '02' ),
+				)
+			);
+
+			self::assertIsArray( $updated, 'The answer holds the updated settings.' );
+			self::assertSame( array( 'title', 'su_list_setting' ), array_keys( $updated ), 'The answer should hold only the updated settings.' );
+			self::assertSame( 'Validated List Site', $updated['title'] );
+			self::assertSame( 'Validated List Site', get_option( 'blogname' ), 'The other setting should be stored.' );
+			self::assertSame( array( 1, 2 ), $updated['su_list_setting'], 'The answer should carry the coerced (cast) items.' );
+			self::assertSame( array( 1, 2 ), get_option( 'su_list_setting' ), 'The coerced list should be stored.' );
+		} finally {
+			unregister_setting( 'validation', 'su_list_setting' );
+			delete_option( 'su_list_setting' );
+		}
+	}
+
+	/**
+	 * The plugin's endpoint-style mapping survives the framework change as
+	 * the port wrote it: a value its own schema sanitize makes invalid (the
+	 * unique-before-coercion list, which execute() can no longer reach the
+	 * callback with on coercion hosts) is refused with `settings_invalid_param`,
+	 * 400, the param named, and the all-or-nothing order. Pinned directly on
+	 * the plugin's update path, as the companion read row invokes its own.
+	 */
+	public function test_the_plugin_sanitize_refusal_maps_to_settings_invalid_param(): void {
+		$this->log_in_as( 'administrator' );
+		update_option( 'blogname', 'Original Name' );
+
+		$this->register_unique_list_setting();
+
+		try {
+			$result = ( new ReflectionClass( Settings_Update::class ) )
+				->getMethod( 'execute_settings_update' )
+				->invoke(
+					$this->fresh_instance(),
+					array(
+						'title'           => 'Should Not Persist',
+						'su_list_setting' => array( '1', '01' ),
+					)
+				);
 
 			$this->assert_error_response( 'settings_invalid_param', $result, 400, 'A value that sanitizing makes invalid should be refused.' );
 			self::assertSame( array( 'su_list_setting' ), array_keys( $result->get_error_data()['params'] ?? array() ), 'The refused field should be named.' );

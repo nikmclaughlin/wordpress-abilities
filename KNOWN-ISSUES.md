@@ -117,3 +117,37 @@ until core decides otherwise:
   - The delete capability is re-checked right before anything is removed, so
     a hook refusal surfaces as `media_cannot_delete` (500) on the
     `pre_delete_attachment` veto.
+- `wp/term-create` / `wp/term-update` / `wp/term-delete` (WordPress/ai PR #1103):
+  - Terms cannot be trashed, so `wp/term-delete` only deletes with `force`
+    set to true: a missing or false `force` answers `terms_trash_not_supported`
+    (501), and string values coerce like booleans through the delete route's
+    query-string input (`"false"` does not delete, `"true"` does).
+  - The default category cannot be deleted. No ability code protects it: core's
+    `map_meta_cap()` answers `do_not_allow` for `delete_term` against the term
+    named by the `default_{$taxonomy}` option, so the permission callback
+    denies it like a missing capability, and with a `map_meta_cap` filter
+    granting the capability anyway, `wp_delete_term()` returns 0 and the
+    execute callback answers `terms_cannot_delete` (500).
+  - A missing term, a term outside the exposed taxonomies, or one outside the
+    optional `taxonomy` guard is denied like a missing capability — a generic
+    permission denial through the validated transport (no 404 vs 403
+    distinction, so terms cannot be probed); a direct (unvalidated) call
+    reports it as `terms_term_invalid` (404) instead. A malformed `id` or
+    non-string guard fails closed the same way, never cast onto another term.
+  - `parent` is rejected with `terms_taxonomy_not_hierarchical` (400) in a
+    flat taxonomy, and a missing parent with `terms_term_invalid` (400) — the
+    term is not created or changed. A name taken under the same parent (or
+    anywhere in a flat taxonomy) answers `term_exists` (400) with the
+    existing term's ID in the error data; a name that is empty once
+    sanitized answers `empty_term_name` with no status, so the run route
+    reports it as a server error.
+  - Creating a term needs `edit_terms` in a hierarchical taxonomy but only
+    `assign_terms` in a flat one, so a contributor or author can create tags
+    they then cannot update or delete (those need `edit_term` /
+    `delete_term`). The ability follows core's term capability mapping, and
+    these per-term checks run against resolved taxonomy caps without
+    `required_capabilities` in the manifest.
+  - A category name is taken only under the same parent: elsewhere it is
+    accepted with a unique slug (`apple-veg`, `apple-2`, or the requested
+    one), per `wp_insert_term()`. Renaming keeps the slug until it is
+    explicitly cleared.
